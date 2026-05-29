@@ -19,6 +19,13 @@
 
 # production
 /build
+/data/*.sqlite
+/data/*.sqlite-*
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
 
 # misc
 .DS_Store

@@ -1,0 +1,16 @@
+<svg width="480" height="240" viewBox="0 0 480 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="480" height="240" rx="24" fill="#E7E0D4"/>
+  <rect x="0" y="150" width="480" height="90" fill="#D0B79E"/>
+  <rect x="48" y="98" width="70" height="52" rx="12" fill="#C58B5F"/>
+  <path d="M83 98C83 66 58 54 40 54C46 78 56 90 83 98Z" fill="#6D9B63"/>
+  <path d="M83 98C83 66 108 54 126 54C120 78 110 90 83 98Z" fill="#5E8857"/>
+  <rect x="152" y="74" width="86" height="76" rx="12" fill="#B77E55"/>
+  <path d="M195 74C195 36 166 20 142 20C148 46 162 62 195 74Z" fill="#7AA56D"/>
+  <path d="M195 74C195 36 224 20 248 20C242 46 228 62 195 74Z" fill="#668F5C"/>
+  <rect x="274" y="110" width="62" height="40" rx="12" fill="#C58B5F"/>
+  <path d="M305 110C305 82 284 70 266 70C270 92 280 102 305 110Z" fill="#6D9B63"/>
+  <path d="M305 110C305 82 326 70 344 70C340 92 330 102 305 110Z" fill="#5E8857"/>
+  <rect x="360" y="84" width="74" height="66" rx="12" fill="#B77E55"/>
+  <path d="M397 84C397 48 370 34 348 34C354 60 366 74 397 84Z" fill="#7AA56D"/>
+  <path d="M397 84C397 48 424 34 446 34C440 60 428 74 397 84Z" fill="#668F5C"/>
+</svg>
