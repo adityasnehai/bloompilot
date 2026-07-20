@@ -5,36 +5,54 @@ import {
   clearSession,
   createDemoSession,
   deriveNameFromEmail,
+  hashPassword,
   type Gender,
   readSession,
+  verifyPassword,
   writeSession,
   type NotificationChannel,
 } from "@/lib/session";
+import {
+  extractReminderChannels,
+  normalizeReminderChannels,
+} from "@/lib/reminder-channels";
+import { normalizeGardenTypeValue } from "@/lib/garden-type";
 import {
   clearWorkspaceDerivedCareData,
   readWorkspaceProfileByEmail,
   upsertWorkspaceProfile,
 } from "@/lib/workspace-store";
+import { issuePasswordResetToken, resetPassword, sendPasswordResetEmail } from "@/lib/password-reset";
 
-function getChannels(formData: FormData): NotificationChannel[] {
+function getChannels(
+  formData: FormData,
+  fallback: NotificationChannel[] = ["push"],
+): NotificationChannel[] {
   const channels = formData
     .getAll("channels")
     .map((value) => value.toString())
     .filter(
       (value): value is NotificationChannel =>
-        value === "email" || value === "push" || value === "whatsapp",
+        value === "email" || value === "push" || value === "telegram",
     );
 
-  return channels.length > 0 ? channels : ["email"];
+  return normalizeReminderChannels(
+    extractReminderChannels(channels),
+    fallback,
+  );
 }
 
-function parseCoordinate(value: FormDataEntryValue | null) {
+function normalizeChannelsForAvailability(channels: NotificationChannel[]) {
+  return normalizeReminderChannels(channels, ["email"]);
+}
+
+function parseCoordinate(value: FormDataEntryValue | null, min: number, max: number) {
   if (typeof value !== "string" || value.trim() === "") {
     return undefined;
   }
 
   const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : undefined;
 }
 
 function parseAge(value: FormDataEntryValue | null) {
@@ -67,11 +85,18 @@ function parseReminderWindow(formData: FormData, fallback = "") {
 }
 
 export async function signUpAction(formData: FormData) {
-  const name = formData.get("name")?.toString().trim() ?? "";
+  const firstName = formData.get("firstName")?.toString().trim() ?? "";
+  const lastName = formData.get("lastName")?.toString().trim() ?? "";
+  const legacyName = formData.get("name")?.toString().trim() ?? "";
+  const name = [firstName, lastName].filter(Boolean).join(" ").trim() || legacyName;
   const email = formData.get("email")?.toString().trim() ?? "";
+  const password = formData.get("password")?.toString() ?? "";
 
-  if (!name || !email) {
-    redirect("/sign-up");
+  if (!name || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8 || password.length > 128) {
+    redirect("/sign-up?error=invalid");
+  }
+  if (readWorkspaceProfileByEmail(email)) {
+    redirect("/sign-in?error=exists");
   }
 
   const nextSession = createDemoSession({
@@ -82,45 +107,82 @@ export async function signUpAction(formData: FormData) {
     onboarded: false,
   });
 
+  const userId = upsertWorkspaceProfile(nextSession);
+  const { getDatabase } = await import("@/lib/database");
+  getDatabase().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), userId);
   await writeSession(nextSession);
-  upsertWorkspaceProfile(nextSession);
 
   redirect("/preferences");
 }
 
 export async function signInAction(formData: FormData) {
   const email = formData.get("email")?.toString().trim() ?? "";
+  const password = formData.get("password")?.toString() ?? "";
 
-  if (!email) {
-    redirect("/sign-in");
+  if (!email || !password) {
+    redirect("/sign-in?error=invalid");
   }
 
-  const rememberedSession = await readSession();
+  const { getDatabase } = await import("@/lib/database");
   const storedProfile = readWorkspaceProfileByEmail(email);
+  const storedIdentity = getDatabase().prepare("SELECT password_hash FROM users WHERE email = ?").get(email.toLowerCase()) as { password_hash: string | null } | undefined;
+  if (storedProfile && !storedIdentity?.password_hash) {
+    redirect("/sign-in?error=password_reset_required");
+  }
+  if (!storedProfile || !verifyPassword(password, storedIdentity?.password_hash)) {
+    redirect("/sign-in?error=invalid");
+  }
 
   const nextSession = createDemoSession({
-    name:
-      storedProfile?.name ??
-      (rememberedSession?.email === email
-        ? rememberedSession.name
-        : deriveNameFromEmail(email)),
-    age: storedProfile?.age ?? rememberedSession?.age,
-    gender: storedProfile?.gender ?? rememberedSession?.gender,
+    name: storedProfile.name || deriveNameFromEmail(email),
+    age: storedProfile.age,
+    gender: storedProfile.gender,
     email,
     onboarded: storedProfile?.onboarded ?? false,
-    location: storedProfile?.location ?? rememberedSession?.location,
-    latitude: storedProfile?.latitude ?? rememberedSession?.latitude,
-    longitude: storedProfile?.longitude ?? rememberedSession?.longitude,
-    gardenType: storedProfile?.gardenType ?? rememberedSession?.gardenType,
-    reminderWindow:
-      storedProfile?.reminderWindow ?? rememberedSession?.reminderWindow,
-    channels: storedProfile?.channels ?? rememberedSession?.channels,
+    location: storedProfile.location,
+    latitude: storedProfile.latitude,
+    longitude: storedProfile.longitude,
+    gardenType: storedProfile.gardenType,
+    reminderWindow: storedProfile.reminderWindow,
+    channels: storedProfile.channels,
+    emailDailyReminder: storedProfile.emailDailyReminder,
+    emailWeeklyDigest: storedProfile.emailWeeklyDigest,
+    telegramChatId: storedProfile.telegramChatId,
+    timezone: storedProfile.timezone,
+    countryCode: storedProfile.countryCode,
   });
 
   await writeSession(nextSession);
   upsertWorkspaceProfile(nextSession);
 
   redirect(nextSession.onboarded ? "/dashboard" : "/preferences");
+}
+
+export async function requestPasswordResetAction(formData: FormData) {
+  const email = formData.get("email")?.toString().trim().toLowerCase() ?? "";
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const request = issuePasswordResetToken(email);
+    if (request) await sendPasswordResetEmail({ to: request.email, name: request.name, token: request.token });
+  }
+
+  // Keep account existence private. The same confirmation is shown for every valid request.
+  redirect("/forgot-password?sent=1");
+}
+
+export async function completePasswordResetAction(formData: FormData) {
+  const token = formData.get("token")?.toString().trim() ?? "";
+  const password = formData.get("password")?.toString() ?? "";
+  const confirmation = formData.get("confirmation")?.toString() ?? "";
+
+  if (!token || password.length < 8 || password.length > 128 || password !== confirmation) {
+    redirect(`/reset-password?error=invalid&token=${encodeURIComponent(token)}`);
+  }
+
+  if (!resetPassword(token, password)) {
+    redirect("/reset-password?error=expired");
+  }
+
+  redirect("/sign-in?reset=1");
 }
 
 export async function completePreferencesAction(formData: FormData) {
@@ -131,15 +193,18 @@ export async function completePreferencesAction(formData: FormData) {
   }
 
   const location = formData.get("location")?.toString().trim() ?? "";
-  const latitude = parseCoordinate(formData.get("latitude"));
-  const longitude = parseCoordinate(formData.get("longitude"));
+  const latitude = parseCoordinate(formData.get("latitude"), -90, 90);
+  const longitude = parseCoordinate(formData.get("longitude"), -180, 180);
   const timezone = formData.get("timezone")?.toString().trim() || undefined;
   const countryCode = formData.get("countryCode")?.toString().trim().toLowerCase() || undefined;
   const name = formData.get("name")?.toString().trim() || session.name;
   const age = parseAge(formData.get("age")) ?? session.age;
   const gender = parseGender(formData.get("gender")) ?? session.gender;
-  const gardenType = formData.get("gardenType")?.toString().trim() ?? "";
+  const gardenType = normalizeGardenTypeValue(formData.get("gardenType")?.toString().trim() ?? session.gardenType);
   const reminderWindow = parseReminderWindow(formData, session.reminderWindow);
+  const channels = normalizeChannelsForAvailability(
+    getChannels(formData, session.channels.length > 0 ? session.channels : ["push"]),
+  );
 
   const nextSession = createDemoSession({
     name,
@@ -153,7 +218,8 @@ export async function completePreferencesAction(formData: FormData) {
     countryCode,
     gardenType,
     reminderWindow,
-    channels: getChannels(formData),
+    channels,
+    telegramChatId: session.telegramChatId,
     onboarded: false,
   });
 
@@ -219,17 +285,24 @@ export async function updateProfileAction(formData: FormData) {
   const email = formData.get("email")?.toString().trim() ?? session.email;
   const location =
     formData.get("location")?.toString().trim() ?? session.location;
-  const latitude = parseCoordinate(formData.get("latitude")) ?? session.latitude;
-  const longitude = parseCoordinate(formData.get("longitude")) ?? session.longitude;
-  const gardenType =
-    formData.get("gardenType")?.toString().trim() ?? session.gardenType;
+  const latitude = parseCoordinate(formData.get("latitude"), -90, 90) ?? session.latitude;
+  const longitude = parseCoordinate(formData.get("longitude"), -180, 180) ?? session.longitude;
+  const gardenType = normalizeGardenTypeValue(
+    formData.get("gardenType")?.toString().trim() ?? session.gardenType,
+  );
   const reminderWindow = parseReminderWindow(formData, session.reminderWindow);
 
   const emailDailyReminder = formData.get("emailDailyReminder") === "1";
   const emailWeeklyDigest = formData.get("emailWeeklyDigest") === "1";
-  const whatsappNumber = formData.get("whatsappNumber")?.toString().trim() || undefined;
+  const channels = normalizeChannelsForAvailability(
+    getChannels(formData, session.channels.length > 0 ? session.channels : ["push"]),
+  );
   const timezone = formData.get("timezone")?.toString().trim() || session.timezone;
   const countryCode = formData.get("countryCode")?.toString().trim().toLowerCase() || session.countryCode;
+
+  if (email.toLowerCase() !== session.email.toLowerCase() && readWorkspaceProfileByEmail(email)) {
+    redirect("/settings?error=email_exists");
+  }
 
   const nextSession = createDemoSession({
     name,
@@ -241,10 +314,10 @@ export async function updateProfileAction(formData: FormData) {
     longitude,
     gardenType,
     reminderWindow,
-    channels: getChannels(formData),
+    channels,
     emailDailyReminder,
     emailWeeklyDigest,
-    whatsappNumber,
+    telegramChatId: session.telegramChatId,
     timezone,
     countryCode,
     onboarded: true,

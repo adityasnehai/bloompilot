@@ -12,9 +12,17 @@ type Step = {
   status: StepStatus;
 };
 
+const INITIAL_STEPS: Step[] = [
+  { id: "context", title: "Your garden", detail: "Reading your profile, location, and plants.", status: "running" },
+  { id: "environment", title: "Local conditions", detail: "Checking today’s weather and garden conditions.", status: "pending" },
+  { id: "knowledge", title: "Plant care", detail: "Matching each plant with its care needs.", status: "pending" },
+  { id: "planner", title: "Today’s care plan", detail: "Choosing the most useful actions for today.", status: "pending" },
+  { id: "evidence", title: "Final check", detail: "Checking that recommendations are grounded and safe.", status: "pending" },
+];
+
 export function AgentProcessingScreen() {
   const router = useRouter();
-  const [steps, setSteps] = useState<Step[]>([]);
+  const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,8 +33,12 @@ export function AgentProcessingScreen() {
     }
 
     es.addEventListener("steps", (e: MessageEvent<string>) => {
-      const data = JSON.parse(e.data) as { steps: Step[] };
-      setSteps(data.steps);
+      try {
+        const data = JSON.parse(e.data) as { steps?: Step[] };
+        if (Array.isArray(data.steps) && data.steps.length > 0) setSteps(data.steps);
+      } catch {
+        setError("The setup update was unreadable. Please retry.");
+      }
     });
 
     es.addEventListener("step_update", (e: MessageEvent<string>) => {
@@ -54,7 +66,7 @@ export function AgentProcessingScreen() {
 
     es.onerror = () => {
       es.close();
-      setError("Connection to agent stream was lost. Please retry.");
+      setError("Connection to the setup service was lost. Please retry.");
       setSteps((prev) =>
         prev.map((s) => (s.status === "running" ? { ...s, status: "failed" } : s)),
       );
@@ -72,70 +84,66 @@ export function AgentProcessingScreen() {
   const progressPercent = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0;
 
   return (
-    <main className="landing-root flex min-h-screen items-center justify-center px-4 py-10">
-      <section className="mx-auto w-full max-w-[760px] rounded-[28px] border border-[rgba(220,231,218,0.9)] bg-[linear-gradient(180deg,rgba(255,255,255,0.95)_0%,rgba(244,248,241,0.96)_100%)] px-6 py-7 shadow-[0_18px_40px_rgba(48,65,22,0.08)] sm:px-8 sm:py-8">
-        <p className="eyebrow">Preparing dashboard</p>
-        <h1 className="font-accent mt-2 text-[2rem] font-semibold leading-[1.02] text-[#173528] sm:text-[2.3rem]">
-          BloomPilot agents are building your care workspace.
+    <main className="app-shell flex min-h-screen items-center justify-center px-4 py-10">
+      <section className="mx-auto w-full max-w-[760px] rounded-[28px] border border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-7 shadow-[0_18px_40px_rgba(24,36,27,0.1)] sm:px-8 sm:py-8">
+        <p className="eyebrow">Almost ready</p>
+        <h1 className="font-accent mt-2 text-[2rem] font-semibold leading-[1.02] text-[var(--color-ink)] sm:text-[2.3rem]">
+          Setting up your garden dashboard.
         </h1>
         <p className="landing-copy mt-3 text-[15px]">
-          We are running context, environment, and planning agents so your first dashboard is ready with reliable actions.
+          We’re checking your plants and today’s conditions so your first care actions fit your garden.
         </p>
 
         <div className="mt-6">
-          <div className="h-2.5 overflow-hidden rounded-full bg-[#e7efe4]">
+          <div className="h-2.5 overflow-hidden rounded-full bg-[var(--color-canvas-soft)]">
             <div
-              className="h-full rounded-full bg-[linear-gradient(90deg,#173528,#5f8a52)] transition-all duration-500"
+              className="h-full rounded-full bg-[linear-gradient(90deg,var(--color-canopy),var(--color-primary-hover))] transition-all duration-500"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <p className="mt-2 text-xs text-[#5f7568]">{progressPercent}% complete</p>
-        </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-[var(--color-muted)]">
+              <span>{progressPercent}% ready</span>
+              <span>{progressPercent === 100 ? "Finishing up" : "This usually takes a moment"}</span>
+            </div>
+          </div>
 
-        <div className="mt-6 grid gap-3">
-          {steps.length === 0 ? (
-            <p className="text-sm text-[#647b6f]">Connecting to agent stream…</p>
-          ) : (
-            steps.map((step) => (
+        <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)]">
+          {steps.map((step) => (
               <article
                 key={step.id}
-                className="rounded-2xl border border-[#dce7da] bg-white/88 px-4 py-3"
+                className="flex items-center gap-3 border-b border-[var(--color-line)] px-4 py-3 last:border-b-0"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="font-accent text-sm font-semibold text-[#173528]">
-                      {step.title}
-                    </p>
-                    <p className="mt-1 text-xs text-[#647b6f]">{step.detail}</p>
-                  </div>
-                  <span
-                    className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                <span
+                  aria-hidden="true"
+                  className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
                       step.status === "done"
-                        ? "bg-[#eaf4df] text-[#3b6a35]"
+                        ? "bg-[var(--color-canvas-mint)] text-[var(--color-ink)]"
                         : step.status === "running"
-                          ? "bg-[#eef4e4] text-[#556f45]"
-                          : step.status === "failed"
-                            ? "bg-[#fde9e6] text-[#a1452e]"
-                            : "bg-[#f2f4f1] text-[#6c7b72]"
+                          ? "bg-[var(--color-canvas-mint)] text-[var(--color-ink)]"
+                            : step.status === "failed"
+                            ? "bg-[var(--color-canvas-mint)] text-[var(--color-ink)]"
+                              : "bg-[var(--color-surface)] text-[var(--color-muted)]"
                     }`}
-                  >
-                    {step.status === "done"
-                      ? "Done"
-                      : step.status === "running"
-                        ? "Running…"
-                        : step.status === "failed"
-                          ? "Failed"
-                          : "Queued"}
-                  </span>
+                >
+                  {step.status === "done" ? "✓" : step.status === "failed" ? "!" : step.status === "running" ? "•" : ""}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-accent text-sm font-semibold text-[var(--color-ink)]">{step.title}</p>
+                  <p className="mt-0.5 text-xs text-[var(--color-muted)]">{step.detail}</p>
                 </div>
+                <span className="shrink-0 text-xs font-medium text-[var(--color-muted)]">
+                  {step.status === "done" ? "Ready" : step.status === "running" ? "Checking…" : step.status === "failed" ? "Needs attention" : "Next"}
+                </span>
               </article>
-            ))
-          )}
+            ))}
         </div>
 
         {error ? (
-          <div className="mt-5 rounded-2xl border border-[#f2c9bf] bg-[#fff4f1] px-4 py-3 text-sm text-[#8f3f2a]">
-            {error}
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-3 text-sm text-[var(--color-muted)]">
+            <span>We couldn’t finish setting up your dashboard. Your garden data is safe.</span>
+            <button type="button" onClick={() => window.location.reload()} className="font-medium text-[var(--color-canopy)] underline underline-offset-4">
+              Try again
+            </button>
           </div>
         ) : null}
       </section>

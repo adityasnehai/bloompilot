@@ -1,4 +1,6 @@
 import { removePlantAction } from "@/app/garden-actions";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { type Plant } from "@/lib/garden";
 
 type PlantCardProps = {
@@ -13,7 +15,7 @@ type PlantCardProps = {
 
 export function PlantCard({ plant, stats, returnTo = "/garden" }: PlantCardProps) {
   return (
-    <article className="surface-card p-5">
+    <Card as="article" className="p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-xl font-semibold text-[var(--color-ink)]">
@@ -60,14 +62,16 @@ export function PlantCard({ plant, stats, returnTo = "/garden" }: PlantCardProps
         <form action={removePlantAction}>
           <input type="hidden" name="plantId" value={plant.id} />
           <input type="hidden" name="returnTo" value={returnTo} />
-          <button
+          <Button
             type="submit"
-            className="button-secondary h-10"
+            variant="secondary"
+            size="sm"
+            className="h-10 rounded-full"
           >
             Remove
-          </button>
+          </Button>
         </form>
       </div>
-    </article>
+    </Card>
   );
 }

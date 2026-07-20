@@ -10,7 +10,7 @@ export default async function SignInPage() {
   }
 
   return (
-    <div className="landing-root flex min-h-screen items-center justify-center px-4 py-10">
+    <div className="auth-onboarding flex min-h-screen items-center justify-center px-4 py-10">
       <div className="w-full max-w-[480px]">
         <AuthFormCard mode="sign-in" />
       </div>

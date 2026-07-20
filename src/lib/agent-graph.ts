@@ -1,6 +1,7 @@
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import {
   buildCarePlanOutput,
+  buildRawCareActions,
   buildPlantCarePlans,
   saveCarePlan,
   validateCareActions,
@@ -10,6 +11,12 @@ import {
   type PlantCarePlan,
 } from "@/lib/care-plan-engine";
 import {
+  describeReminderMode,
+  formatReminderChannelSequence,
+  extractReminderChannels,
+  normalizeReminderChannels,
+} from "@/lib/reminder-channels";
+import {
   buildGardenContext,
   isGardenContextSnapshotStale,
   readLatestContextSnapshot,
@@ -18,6 +25,7 @@ import {
 import { runReActCarePlanner } from "@/lib/care-planner-react";
 import { runAlertObserver } from "@/lib/alert-observer";
 import { enrichSpeciesBatch } from "@/lib/plant-enrichment";
+import { isReminderWindowActive } from "@/lib/reminders";
 
 type ReactPlannerReport = {
   toolCallCount: number;
@@ -41,6 +49,8 @@ type ReminderQueueReport = {
   ready_count: number;
   blocked_count: number;
   channels: string[];
+  reminder_window: string;
+  window_active: boolean;
 };
 
 type RunCareAgentsInput = {
@@ -227,10 +237,42 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
   const context = requireContext(state);
   const plantPlans = buildPlantCarePlans(context);
 
-  const { actions: rawActions, toolCallCount, iterations } = await runReActCarePlanner(
-    context,
-    state.userId,
+  let plannerActions: CarePlanAction[] = [];
+  let toolCallCount = 0;
+  let iterations = 0;
+  let fallbackUsed = false;
+
+  try {
+    const result = await runReActCarePlanner(context, state.userId);
+    plannerActions = result.actions;
+    toolCallCount = result.toolCallCount;
+    iterations = result.iterations;
+  } catch {
+    fallbackUsed = true;
+  }
+
+  // Keep the workspace actionable when the external planner fails or omits a plant.
+  // These rules use the same saved context and weather evidence, not mock data.
+  const fallbackActions = buildRawCareActions(context);
+  const coveredPlantIds = new Set(
+    plannerActions
+      .map((action) => action.plant_id)
+      .filter((plantId): plantId is string => Boolean(plantId)),
   );
+  const coveredActionKeys = new Set(
+    plannerActions.map((action) => `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`),
+  );
+  const rawActions = [
+    ...plannerActions,
+    ...fallbackActions.filter((action) => {
+      const key = `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`;
+      if (coveredActionKeys.has(key)) return false;
+      if (action.plant_id !== null && coveredPlantIds.has(action.plant_id)) return false;
+      coveredActionKeys.add(key);
+      return true;
+    }),
+  ];
+  fallbackUsed = fallbackUsed || plannerActions.length === 0 || rawActions.length > plannerActions.length;
 
   emitProgress(state.agentRunId, "planner");
 
@@ -247,7 +289,9 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
         input: `${context.plants.length} plants, ${context.environment.temperature_c !== null ? `${context.environment.temperature_c}°C` : "no weather"}`,
         output: gaveUp
           ? `Planner did not submit any actions after ${toolCallCount} tool calls / ${iterations} iterations. Retry the care plan.`
-          : `Generated ${rawActions.length} actions via ${toolCallCount} tool calls across ${iterations} iterations.`,
+          : fallbackUsed
+            ? `Generated ${plannerActions.length} planner actions and filled missing coverage with validated local care rules.`
+            : `Generated ${rawActions.length} actions via ${toolCallCount} tool calls across ${iterations} iterations.`,
         evidence: [
           {
             type: "agent_reasoning",
@@ -286,27 +330,49 @@ async function evidenceAgent(state: CareAgentStateType) {
 
 async function reminderAgent(state: CareAgentStateType) {
   const context = requireContext(state);
-  const channels = context.user.notification_preference.channels;
+  const channels = normalizeReminderChannels(
+    extractReminderChannels(context.user.notification_preference.channels),
+    ["email"],
+  );
+  const reminderWindow = context.user.notification_preference.time_window;
+  const windowActive = isReminderWindowActive(
+    {
+      timezone: context.garden.location.timezone,
+      reminderWindow,
+    },
+    new Date(),
+  );
   const readyActions = state.approvedActions.filter(
-    (action) => action.due_date && channels.length > 0 && action.confidence >= 0.65,
+    (action) =>
+      action.due_date &&
+      channels.length > 0 &&
+      action.confidence >= 0.65 &&
+      windowActive,
   );
   const blockedCount = state.approvedActions.length - readyActions.length;
+  const channelMode = describeReminderMode(channels);
+  const channelOrder = formatReminderChannelSequence(channels);
+  const summary =
+    channels.length === 0
+      ? "No reminder channels selected yet, so actions stay dashboard-only."
+      : !windowActive
+        ? `Reminder window ${reminderWindow} is closed right now, so ${blockedCount} approved actions wait for the next send slot.`
+        : `${readyActions.length} actions are ready for reminder delivery in ${channelMode.toLowerCase()} mode via ${channelOrder}.`;
 
   return {
     reminderQueueReport: {
       ready_count: readyActions.length,
       blocked_count: blockedCount,
       channels,
+      reminder_window: reminderWindow,
+      window_active: windowActive,
     },
     traces: [
       trace({
         agent: "Reminder Agent",
         status: readyActions.length > 0 ? "success" : "warning",
         input: `${state.approvedActions.length} approved care actions`,
-        output:
-          channels.length > 0
-            ? `${readyActions.length} actions are ready for reminder delivery via ${channels.join(", ")}.`
-            : "No reminder channels selected yet, so actions stay dashboard-only.",
+        output: summary,
         evidence: [
           {
             type: "reminder_preference",

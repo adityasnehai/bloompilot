@@ -29,7 +29,8 @@ export async function POST(request: Request) {
     return response;
   }
 
-  const body = (await request.json()) as Record<string, unknown>;
+  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   const input = coercePlantInput(body);
 
   if (!input) {

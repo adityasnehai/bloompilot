@@ -20,6 +20,10 @@ export async function POST(
 
   const result = await toggleTaskMutation(taskId);
 
+  if (!result.task) {
+    return NextResponse.json({ error: "Task not found" }, { status: 404 });
+  }
+
   return NextResponse.json({
     ok: true,
     garden: result.garden,

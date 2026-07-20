@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { addPlantNote, deletePlantNote, getPlantNotes } from "@/lib/plant-notes";
+import { getDatabase } from "@/lib/database";
 
 export async function GET(request: NextRequest) {
   const { session, response } = await requireApiSession();
@@ -21,12 +22,16 @@ export async function POST(request: NextRequest) {
   const identity = readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
-  const body = (await request.json()) as { plantId: string; plantName: string; body: string };
-  if (!body.plantId || !body.plantName || !body.body?.trim()) {
+  const body = await request.json().catch(() => null) as { plantId?: string; plantName?: string; body?: string } | null;
+  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  if (!body.plantId || !body.body?.trim()) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const note = addPlantNote(identity.id, body.plantId, body.plantName, body.body);
+  const plant = getDatabase().prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(body.plantId, identity.id) as { nickname: string } | undefined;
+  if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
+
+  const note = addPlantNote(identity.id, body.plantId, plant.nickname, body.body);
   return NextResponse.json({ note });
 }
 

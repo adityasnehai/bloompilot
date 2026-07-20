@@ -14,6 +14,7 @@ type WeekSummary = {
   tasksDue: number;
   healthScore: number;
   upcomingCount: number;
+  lowPriorityItems: { title: string; plant_name: string }[];
 };
 
 function buildWeekSummary(userId: number): WeekSummary {
@@ -53,7 +54,21 @@ function buildWeekSummary(userId: number): WeekSummary {
     } catch { /* ignore */ }
   }
 
-  return { waterings, skips, diagnoses, tasksCompleted, tasksDue, healthScore, upcomingCount };
+  // Low-priority care actions from the latest care plan
+  let lowPriorityItems: { title: string; plant_name: string }[] = [];
+  if (latestPlan) {
+    try {
+      type PlanAction = { priority: string; title: string; plant_name: string; status: string };
+      const plan = JSON.parse(latestPlan.plan_json) as { today_actions?: PlanAction[]; upcoming_tasks?: PlanAction[] };
+      const allActions = [...(plan.today_actions ?? []), ...(plan.upcoming_tasks ?? [])];
+      lowPriorityItems = allActions
+        .filter((a) => a.priority === "low" && a.status === "approved")
+        .map((a) => ({ title: a.title, plant_name: a.plant_name }))
+        .slice(0, 8);
+    } catch { /* ignore */ }
+  }
+
+  return { waterings, skips, diagnoses, tasksCompleted, tasksDue, healthScore, upcomingCount, lowPriorityItems };
 }
 
 function buildDigestHtml(userName: string, summary: WeekSummary, stats: ReturnType<typeof getGardenStats>): string {
@@ -93,6 +108,14 @@ function buildDigestHtml(userName: string, summary: WeekSummary, stats: ReturnTy
     <h2>Next week</h2>
     <p>${summary.tasksDue} tasks due in the next 7 days. Keep up the routine!</p>
   </div>
+  ${summary.lowPriorityItems.length > 0 ? `
+  <div class="card">
+    <h2>Low-priority care backlog</h2>
+    <p>These are nice-to-do items that aren't urgent but worth tackling this week:</p>
+    <ul style="margin:8px 0;padding-left:20px;color:#647b6f;font-size:13px;line-height:1.8;">
+      ${summary.lowPriorityItems.map((i) => `<li><strong>${i.plant_name}</strong>: ${i.title}</li>`).join("")}
+    </ul>
+  </div>` : ""}
   <p style="font-size:11px;color:#aaa;text-align:center;margin-top:16px">BloomPilot · Unsubscribe in settings</p>
 </body>
 </html>`;
@@ -108,13 +131,18 @@ export async function sendWeeklyDigest(userId: number, userEmail: string, userNa
   const html = buildDigestHtml(userName, summary, stats);
 
   try {
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: fromEmail,
       to: [userEmail],
       subject: `🌿 Your weekly garden report — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}`,
       html,
       text: `Weekly garden report: ${summary.waterings} waterings, ${summary.tasksCompleted} tasks done, health score ${summary.healthScore}/100. ${summary.tasksDue} tasks due next week.`,
     });
+
+    if (response.error) {
+      return { sent: false, reason: response.error.message };
+    }
+
     return { sent: true };
   } catch (err) {
     return { sent: false, reason: err instanceof Error ? err.message : "Send failed" };

@@ -27,6 +27,7 @@ Then set:
 
 ```bash
 AGENT_SERVICE_URL=http://127.0.0.1:8001
+AGENT_SERVICE_API_KEY=use-the-same-long-random-value-in-both-services
 ```
 
 ## Endpoints
@@ -35,3 +36,8 @@ AGENT_SERVICE_URL=http://127.0.0.1:8001
 - `POST /brief`
 - `POST /reminders/sweep`
 - `POST /diagnosis`
+
+All non-health endpoints require the `X-Agent-Service-Key` header. The service
+does not send notifications or diagnose from symptoms alone; it returns
+workspace-derived candidates and evidence-limited results for the caller to
+process through the real web application providers.

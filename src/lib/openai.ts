@@ -83,6 +83,7 @@ export async function requestOpenAIJson<T>({
         },
       ],
     }),
+    signal: AbortSignal.timeout(30000),
   });
 
   if (!response.ok) {
@@ -163,6 +164,7 @@ export async function requestOpenAIChat({
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000),
   });
 
   if (!response.ok) {

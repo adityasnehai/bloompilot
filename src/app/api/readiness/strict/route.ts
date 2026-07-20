@@ -48,6 +48,9 @@ export async function GET() {
     ...(providerHealth.perenual_configured
       ? []
       : [{ level: "high" as const, message: "PERENUAL_API_KEY missing." }]),
+    ...(providerHealth.openai_configured
+      ? []
+      : [{ level: "high" as const, message: "OPENAI_API_KEY missing; care planning cannot run." }]),
   ];
 
   const ready = appConfig.strictProductionMode ? context.agent_ready && blockers.length === 0 : true;

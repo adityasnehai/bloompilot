@@ -11,7 +11,6 @@ import {
 import {
   requestOpenAIChat,
   type ChatMessage,
-  type ChatToolCall,
   type ChatToolDefinition,
 } from "@/lib/openai";
 
@@ -280,7 +279,7 @@ MANDATORY process — follow this exactly:
 
 When using get_plant_knowledge results:
 - pest_list → add inspect/disease_watch if any known pest is seasonal or weather-favored
-- disease_list → add disease_watch if humidity is high or plant was recently diagnosed
+- disease_list → add disease_watch if humidity is high or the plant has a recent confirmed diagnosis
 - toxicity → add a note in the action reason if plant is toxic (for households with pets/children)
 - pruning_months → add prune action if current month (${currentMonth}) is in pruning_months
 - companion_plants → mention in care notes if relevant to garden layout
@@ -296,7 +295,7 @@ Rules:
 - Every action MUST reference what you found in the evidence (tool results)
 - If negative feedback exists for an action type, do NOT recommend it without strong counter-evidence
 - If a plant has consecutive skips + heat stress, set priority to high
-- If a plant was recently diagnosed, always include a disease_watch action
+- If a plant has a recent confirmed diagnosis, include an inspect or disease_watch follow-up only when it is still actionable
 - Weather context is given — factor in heat, rain, UV when deciding actions
 - Today: ${today}`;
 }
@@ -316,10 +315,12 @@ Risks: heat=${env.risk_flags.heat_stress}, frost=${env.risk_flags.frost_risk}, h
       : "Weather data unavailable";
 
   const plantsText = context.plants
-    .map(
-      (p) =>
-        `- ID: ${p.plant_id} | Name: ${p.common_name} | Species: ${p.species ?? "unknown"} | Placement: ${p.placement} | Sunlight: ${p.sunlight.label} | Watering every: ${p.watering.custom_interval_days ?? "auto"} days`,
-    )
+    .map((p) => {
+      const zoneNote = p.studio_zone
+        ? ` | Studio planning band (user-arranged, not measured exposure): ${p.studio_zone.replace("_", " ")}`
+        : "";
+      return `- ID: ${p.plant_id} | Name: ${p.common_name} | Species: ${p.species ?? "unknown"} | Placement: ${p.placement} | Sunlight: ${p.sunlight.label}${zoneNote} | Watering every: ${p.watering.custom_interval_days ?? "auto"} days`;
+    })
     .join("\n");
 
   return `Garden: ${context.garden.garden_type} in ${context.garden.location.input}
@@ -336,8 +337,41 @@ ${plantsText || "No plants added yet"}
 Start by calling get_health_history for each plant, then get_action_feedback for each, then get_plant_knowledge where needed, then submit_care_plan.`;
 }
 
-function enrichAction(raw: RawActionInput): CarePlanAction {
+function buildActionEvidence(raw: RawActionInput, context: ContextJson) {
+  const plant = context.plants.find((entry) => entry.plant_id === raw.plant_id);
+  if (!plant) return null;
+
+  const weather = context.environment;
+  const plantFacts = `${plant.common_name} (${plant.species ?? "species not confirmed"}) is in ${plant.placement} with ${plant.sunlight.label.toLowerCase()} light`;
+  let actionFact = "Use the saved plant context when carrying out this action.";
+
+  if (raw.type === "shade" && weather.uv_index !== null) {
+    actionFact = `UV is ${weather.uv_index}; ${plantFacts}, so filtered shade is the relevant response.`;
+  } else if ((raw.type === "water" || raw.type === "skip_water") && plant.watering.custom_interval_days !== null) {
+    actionFact = `The saved watering interval is ${plant.watering.custom_interval_days} days; ${plantFacts}.`;
+  } else if (raw.type === "protect" && weather.risk_flags.frost_risk) {
+    actionFact = `The current forecast has an active frost-risk flag; ${plantFacts}.`;
+  } else if (raw.type === "drainage" && weather.rainfall_mm !== null) {
+    actionFact = `Rainfall is ${weather.rainfall_mm} mm; ${plantFacts}, so drainage should be checked.`;
+  } else if (raw.type === "move" && plant.sunlight.label !== "Full sun") {
+    actionFact = `${plantFacts}; adjust its position to better match the saved light requirement.`;
+  } else if (raw.type === "identify") {
+    actionFact = `${plant.common_name} does not have a confirmed species, so species-specific care remains limited.`;
+  } else {
+    actionFact = `${plantFacts}.`;
+  }
+
+  return {
+    type: "plant_context",
+    source: "BloomPilot context builder",
+    supports: actionFact,
+  };
+}
+
+function enrichAction(raw: RawActionInput, context: ContextJson): CarePlanAction {
   const today = new Date().toISOString().slice(0, 10);
+  const actionEvidence = buildActionEvidence(raw, context);
+  const reason = [raw.reason.trim(), actionEvidence?.supports].filter(Boolean).join(" ");
   return {
     id: crypto.randomUUID(),
     plant_id: raw.plant_id,
@@ -346,18 +380,69 @@ function enrichAction(raw: RawActionInput): CarePlanAction {
     title: raw.title,
     priority: raw.priority,
     due_date: raw.due_date || today,
-    reason: raw.reason,
+    reason,
     evidence_refs: [
       {
         type: "agent_reasoning",
         source: "BloomPilot ReAct Care Planner",
         supports: raw.reason,
       },
+      ...(actionEvidence ? [actionEvidence] : []),
     ],
     source_agents: ["ReAct Care Planner"],
     status: "approved",
     confidence: Math.min(1, Math.max(0, raw.confidence)),
   };
+}
+
+const VALID_ACTION_TYPES: CareActionType[] = [
+  "water", "skip_water", "move", "shade", "protect", "inspect",
+  "fertilize", "prune", "identify", "drainage", "disease_watch",
+];
+
+function normalizeSubmittedActions(value: unknown, context: ContextJson): RawActionInput[] {
+  if (!Array.isArray(value)) return [];
+  const plants = new Map(context.plants.map((plant) => [plant.plant_id, plant.common_name]));
+  const today = new Date().toISOString().slice(0, 10);
+
+  const normalized = value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const item = candidate as Record<string, unknown>;
+    const plantId = typeof item.plant_id === "string" ? item.plant_id : "";
+    const plantName = plants.get(plantId);
+    const type = typeof item.type === "string" && VALID_ACTION_TYPES.includes(item.type as CareActionType)
+      ? item.type as CareActionType
+      : null;
+    const priority = item.priority === "high" || item.priority === "medium" || item.priority === "low"
+      ? item.priority as CarePriority
+      : null;
+    const dueDate = typeof item.due_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.due_date) && item.due_date >= today
+      ? item.due_date
+      : null;
+    const title = typeof item.title === "string" ? item.title.trim().slice(0, 160) : "";
+    const reason = typeof item.reason === "string" ? item.reason.trim().slice(0, 1000) : "";
+    const confidence = Number(item.confidence);
+
+    if (!plantName || !type || !priority || !dueDate || !title || !reason || !Number.isFinite(confidence)) return [];
+    return [{
+      plant_id: plantId,
+      plant_name: plantName,
+      type,
+      title,
+      priority,
+      due_date: dueDate,
+      reason,
+      confidence: Math.max(0, Math.min(1, confidence)),
+    }];
+  });
+
+  const seen = new Set<string>();
+  return normalized.filter((action) => {
+    const key = `${action.plant_id}|${action.type}|${action.due_date}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function runReActCarePlanner(
@@ -406,15 +491,27 @@ export async function runReActCarePlanner(
       }
 
       if (toolCall.function.name === "submit_care_plan") {
-        const submitted = (args.actions ?? []) as RawActionInput[];
-        finalActions = submitted.map(enrichAction);
+        const submitted = normalizeSubmittedActions(args.actions, context);
+        finalActions = submitted.map((action) => enrichAction(action, context));
+        const submittedCount = Array.isArray(args.actions) ? args.actions.length : 0;
+        const rejectedCount = submittedCount - finalActions.length;
 
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
-          content: JSON.stringify({ status: "accepted", count: finalActions.length }),
+          content: JSON.stringify({
+            status: finalActions.length > 0 && rejectedCount === 0 ? "accepted" : "needs_revision",
+            count: finalActions.length,
+            rejected: rejectedCount,
+            message:
+              rejectedCount > 0
+                ? "Some actions were invalid or duplicated. Submit a corrected complete action list with valid plant IDs, dates, reasons, and confidence values."
+                : undefined,
+          }),
         });
-        return { actions: finalActions, toolCallCount, iterations };
+        if (finalActions.length > 0 && rejectedCount === 0) {
+          return { actions: finalActions, toolCallCount, iterations };
+        }
       }
 
       const toolResult = await executeTool(

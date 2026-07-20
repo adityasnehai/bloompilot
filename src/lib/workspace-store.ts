@@ -1,5 +1,9 @@
 import { getDatabase } from "@/lib/database";
 import type { DemoSession, Gender, NotificationChannel } from "@/lib/session";
+import {
+  extractReminderChannels,
+  normalizeReminderChannels,
+} from "@/lib/reminder-channels";
 
 type UserRow = {
   id: number;
@@ -15,7 +19,7 @@ type UserRow = {
   channels_json: string;
   email_daily_reminder: number | null;
   email_weekly_digest: number | null;
-  whatsapp_number: string | null;
+  telegram_chat_id: string | null;
   timezone: string | null;
   country_code: string | null;
   onboarded: number;
@@ -25,13 +29,7 @@ type UserRow = {
 
 function parseChannels(raw: string): NotificationChannel[] {
   try {
-    const parsed = JSON.parse(raw) as string[];
-    const channels = parsed.filter(
-      (value): value is NotificationChannel =>
-        value === "email" || value === "push" || value === "whatsapp",
-    );
-
-    return channels.length > 0 ? channels : ["email"];
+    return normalizeReminderChannels(extractReminderChannels(JSON.parse(raw)), ["email"]);
   } catch {
     return ["email"];
   }
@@ -64,7 +62,7 @@ function mapRowToSession(row: UserRow): DemoSession {
     channels: parseChannels(row.channels_json),
     emailDailyReminder: row.email_daily_reminder !== 0,
     emailWeeklyDigest: row.email_weekly_digest !== 0,
-    whatsappNumber: row.whatsapp_number ?? undefined,
+    telegramChatId: row.telegram_chat_id ?? undefined,
     timezone: row.timezone ?? undefined,
     countryCode: row.country_code ?? undefined,
     onboarded: Boolean(row.onboarded),
@@ -79,7 +77,7 @@ export function readWorkspaceProfileByEmail(email: string) {
       `
         SELECT id, email, name, location, garden_type, reminder_window,
                age, gender, latitude, longitude, channels_json,
-               email_daily_reminder, email_weekly_digest, whatsapp_number, timezone, country_code, onboarded, joined_at, updated_at
+               email_daily_reminder, email_weekly_digest, telegram_chat_id, timezone, country_code, onboarded, joined_at, updated_at
         FROM users
         WHERE email = ?
       `,
@@ -101,7 +99,7 @@ export function upsertWorkspaceProfile(
       `
         SELECT id, email, name, location, garden_type, reminder_window,
                age, gender, latitude, longitude, channels_json,
-               email_daily_reminder, email_weekly_digest, whatsapp_number, timezone, country_code, onboarded, joined_at, updated_at
+               email_daily_reminder, email_weekly_digest, telegram_chat_id, timezone, country_code, onboarded, joined_at, updated_at
         FROM users
         WHERE email = ?
       `,
@@ -115,7 +113,7 @@ export function upsertWorkspaceProfile(
           UPDATE users
           SET email = ?, name = ?, age = ?, gender = ?, location = ?, latitude = ?, longitude = ?,
               garden_type = ?, reminder_window = ?, channels_json = ?,
-              email_daily_reminder = ?, email_weekly_digest = ?, whatsapp_number = ?,
+              email_daily_reminder = ?, email_weekly_digest = ?, telegram_chat_id = ?,
               timezone = ?, country_code = ?,
               onboarded = ?, updated_at = ?
           WHERE id = ?
@@ -134,7 +132,7 @@ export function upsertWorkspaceProfile(
         JSON.stringify(session.channels),
         session.emailDailyReminder ? 1 : 0,
         session.emailWeeklyDigest ? 1 : 0,
-        session.whatsappNumber ?? null,
+        session.telegramChatId ?? existing.telegram_chat_id ?? null,
         session.timezone ?? null,
         session.countryCode ?? null,
         session.onboarded ? 1 : 0,
@@ -151,7 +149,7 @@ export function upsertWorkspaceProfile(
         INSERT INTO users (
           email, name, age, gender, location, latitude, longitude, garden_type,
           reminder_window, channels_json, email_daily_reminder, email_weekly_digest,
-          whatsapp_number, timezone, country_code, onboarded, joined_at, updated_at
+          telegram_chat_id, timezone, country_code, onboarded, joined_at, updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -169,7 +167,7 @@ export function upsertWorkspaceProfile(
       JSON.stringify(session.channels),
       session.emailDailyReminder ? 1 : 0,
       session.emailWeeklyDigest ? 1 : 0,
-      session.whatsappNumber ?? null,
+      session.telegramChatId ?? null,
       session.timezone ?? null,
       session.countryCode ?? null,
       session.onboarded ? 1 : 0,

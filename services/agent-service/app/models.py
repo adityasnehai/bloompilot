@@ -62,12 +62,14 @@ class DiagnosisPayload(BaseModel):
 
 
 class DiagnosisResult(BaseModel):
-    issue: str
-    category: str
-    severity: Severity
-    confidence: int
+    issue: str = "Needs more evidence"
+    category: str = "observation"
+    severity: Severity = "low"
+    confidence: int = 0
+    evidenceStatus: Literal["confirmed", "needs_more_evidence"] = "needs_more_evidence"
+    provider: str = "external_agent"
     summary: str
-    treatment: list[str]
+    treatment: list[str] = Field(default_factory=list)
     followUp: str
 
 

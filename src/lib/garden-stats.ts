@@ -104,11 +104,18 @@ export function getGardenStats(userId: number): GardenStats {
   ).get(userId) as NameCountRow | undefined;
 
   // Last 14 days activity
-  const activityDays = db.prepare(
+  const activityDaysRaw = db.prepare(
     `SELECT date(created_at) as date, COUNT(*) as count
      FROM plant_health_events WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-14 days')
      GROUP BY date ORDER BY date ASC`,
   ).all(userId) as DateCountRow[];
+  const activityByDate = new Map(activityDaysRaw.map((row) => [row.date, row.count]));
+  const activityDays: DateCountRow[] = Array.from({ length: 14 }, (_, index) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - (13 - index));
+    const dateKey = date.toISOString().slice(0, 10);
+    return { date: dateKey, count: activityByDate.get(dateKey) ?? 0 };
+  });
 
   // Task completion rate (last 30 days)
   const taskStats = db.prepare(
@@ -146,8 +153,8 @@ export function getGardenStats(userId: number): GardenStats {
   };
   const plantRows = db.prepare(
     `SELECT p.id as plant_id, p.nickname as plant_name, COALESCE(p.species, '') as species,
-            SUM(CASE WHEN e.event_type = 'watered' THEN 1 ELSE 0 END) as water_count,
-            SUM(CASE WHEN e.event_type = 'water_skipped' THEN 1 ELSE 0 END) as skip_count,
+            COALESCE(SUM(CASE WHEN e.event_type = 'watered' THEN 1 ELSE 0 END), 0) as water_count,
+            COALESCE(SUM(CASE WHEN e.event_type = 'water_skipped' THEN 1 ELSE 0 END), 0) as skip_count,
             MAX(e.created_at) as last_event_at
      FROM plants p
      LEFT JOIN plant_health_events e ON e.plant_id = p.id AND e.user_id = p.user_id
@@ -178,7 +185,14 @@ export function getGardenStats(userId: number): GardenStats {
      FROM diagnosis_runs WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-6 months')
      GROUP BY month ORDER BY month ASC`,
   ).all(userId) as MonthCountRow[];
-  const diagnosisTrend: DiagnosisTrendPoint[] = diagnosisTrendRaw.map((r) => ({ month: r.month, count: r.count }));
+  const diagnosesByMonth = new Map(diagnosisTrendRaw.map((row) => [row.month, row.count]));
+  const diagnosisTrend: DiagnosisTrendPoint[] = Array.from({ length: 6 }, (_, index) => {
+    const month = new Date();
+    month.setUTCDate(1);
+    month.setUTCMonth(month.getUTCMonth() - (5 - index));
+    const monthKey = month.toISOString().slice(0, 7);
+    return { month: monthKey, count: diagnosesByMonth.get(monthKey) ?? 0 };
+  });
 
   // Task completion by kind (last 30 days)
   type TaskKindRow = { kind: string; total: number; done: number };

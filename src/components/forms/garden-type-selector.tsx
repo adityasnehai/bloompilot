@@ -2,13 +2,15 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type GardenTypeOption = {
   label: string;
   value: string;
   description: string;
   imagePath: string;
-  info: string;
+  info?: string;
 };
 
 type GardenTypeSelectorProps = {
@@ -22,69 +24,61 @@ export function GardenTypeSelector({
   defaultValue,
   options,
 }: GardenTypeSelectorProps) {
-  const fallbackValue = defaultValue || options[0]?.value || "";
+  const validDefault = options.find((option) => option.value === defaultValue)?.value;
+  const fallbackValue = validDefault || options[0]?.value || "";
   const [selectedValue, setSelectedValue] = useState(fallbackValue);
 
   return (
     <div className="grid gap-3">
       <input type="hidden" name={name} value={selectedValue} />
-      <div className="flex items-center gap-2">
-        <span className="field-label">Garden type</span>
-        <span
-          className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[rgba(16,52,39,0.12)] text-[11px] font-semibold text-[var(--color-muted)]"
-          title="Pick the setup that is closest to where most of your plants live."
-        >
-          i
-        </span>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {options.map((option) => {
           const selected = option.value === selectedValue;
 
           return (
-            <button
+            <Card
               key={option.value}
-              type="button"
-              onClick={() => setSelectedValue(option.value)}
-              className={`choice-card overflow-hidden p-0 text-left ${
-                selected
-                  ? "border-[var(--color-moss)] ring-2 ring-[rgba(76,121,97,0.14)]"
-                  : ""
-              }`}
+              className={cn(
+                "group overflow-hidden rounded-2xl p-0 text-left transition",
+                selected ? "border-[var(--color-line)]" : "hover:border-white/20",
+              )}
             >
-              <div className="relative h-32 w-full overflow-hidden border-b border-[rgba(16,52,39,0.08)] bg-[rgba(243,241,234,0.72)]">
-                <Image
-                  src={option.imagePath}
-                  alt={option.label}
-                  fill
-                  unoptimized
-                  className="object-cover"
-                />
-                <span
-                  className="absolute right-3 top-3 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-[11px] font-semibold text-[var(--color-muted)] shadow-sm"
-                  title={option.info}
-                >
-                  i
-                </span>
-              </div>
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm font-medium text-[var(--color-ink)]">
-                    {option.label}
-                  </p>
-                  <span
-                    className={`mt-0.5 inline-flex h-4 w-4 rounded-full border ${
-                      selected
-                        ? "border-[var(--color-canopy)] bg-[var(--color-canopy)]"
-                        : "border-[rgba(16,52,39,0.18)] bg-white"
-                    }`}
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setSelectedValue(option.value);
+                }}
+                className="relative flex min-h-[96px] w-full items-stretch text-left"
+              >
+                <div className="relative m-2 h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-muted/30 sm:h-[84px] sm:w-[88px]">
+                  <Image
+                    src={option.imagePath}
+                    alt={option.label}
+                    fill
+                    unoptimized
+                    className="object-cover object-center transition duration-300 group-hover:scale-[1.02]"
                   />
                 </div>
-                <p className="mt-1 text-xs leading-5 text-[var(--color-muted)]">
-                  {option.description}
-                </p>
-              </div>
-            </button>
+                <div className="min-w-0 flex-1 space-y-1.5 px-3 py-3 pr-9">
+                  <div>
+                    <p className="break-words text-sm font-semibold text-[var(--color-ink)]">{option.label}</p>
+                  </div>
+                  <p className="text-xs leading-5 text-[var(--color-muted)]">{option.description}</p>
+                </div>
+                <span
+                  aria-label={selected ? "Selected" : "Not selected"}
+                  title={selected ? "Selected" : "Select this garden type"}
+                  className={cn(
+                    "absolute right-3 top-3 h-2.5 w-2.5 rounded-full border transition-colors",
+                    selected
+                      ? "border-[var(--color-canopy)] bg-[var(--color-canopy)]"
+                      : "border-white/25 bg-transparent",
+                  )}
+                />
+              </button>
+            </Card>
           );
         })}
       </div>

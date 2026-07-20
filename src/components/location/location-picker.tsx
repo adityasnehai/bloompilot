@@ -1,6 +1,10 @@
 "use client";
 
 import { useDeferredValue, useEffect, useId, useState } from "react";
+import { LocateFixed, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 type LocationSuggestion = {
   label: string;
@@ -8,6 +12,7 @@ type LocationSuggestion = {
   longitude: number;
   timezone?: string;
   country?: string;
+  countryCode?: string;
   region?: string;
 };
 
@@ -47,6 +52,8 @@ export function LocationPicker({
   const [query, setQuery] = useState(defaultLocation);
   const [latitude, setLatitude] = useState<number | undefined>(defaultLatitude);
   const [longitude, setLongitude] = useState<number | undefined>(defaultLongitude);
+  const [timezone, setTimezone] = useState<string>("");
+  const [countryCode, setCountryCode] = useState<string>("");
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -176,6 +183,8 @@ export function LocationPicker({
     setQuery(suggestion.label);
     setLatitude(suggestion.latitude);
     setLongitude(suggestion.longitude);
+    setTimezone(suggestion.timezone ?? "");
+    setCountryCode(suggestion.countryCode ?? "");
     setSuggestions([]);
     setError(null);
   };
@@ -219,6 +228,7 @@ export function LocationPicker({
               longitude: payload.longitude,
               timezone: payload.timezone,
               country: payload.country,
+              countryCode: payload.countryCode,
               region: payload.region,
             });
           } else {
@@ -246,7 +256,7 @@ export function LocationPicker({
   };
 
   return (
-    <div className="grid gap-3">
+    <div className="auth-location-picker grid gap-4">
       <input type="hidden" name="location" value={query} />
       <input
         type="hidden"
@@ -258,50 +268,59 @@ export function LocationPicker({
         name="longitude"
         value={longitude === undefined ? "" : longitude}
       />
+      <input type="hidden" name="timezone" value={timezone} />
+      <input type="hidden" name="countryCode" value={countryCode} />
 
-      <label className="flex flex-col gap-2">
-        <span className="field-label">Primary garden location</span>
-        <input
-          id={inputId}
-          type="text"
-          value={query}
-          required={required}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setLatitude(undefined);
-            setLongitude(undefined);
-          }}
-          placeholder="Search city or neighborhood"
-          className="field-control"
-          autoComplete="off"
-        />
-        <span className="field-hint">
-          Search manually and pick a suggested match, or use your current location.
+      <label className="grid gap-2">
+        <span className="text-sm font-medium text-[var(--color-ink)]">Where is your garden?</span>
+        <div className="relative">
+          <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/45" aria-hidden />
+          <Input
+            id={inputId}
+            type="text"
+            value={query}
+            required={required}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setLatitude(undefined);
+              setLongitude(undefined);
+              setTimezone("");
+              setCountryCode("");
+            }}
+            placeholder="Search a city or neighborhood"
+            autoComplete="off"
+            className="h-12 rounded-xl pl-11"
+          />
+        </div>
+        <span className="text-xs leading-5 text-[var(--color-muted)]">
+          Use a city or neighborhood so weather and timing stay local.
         </span>
       </label>
 
-      <div className="flex flex-wrap gap-3">
-        <button
+      <div className="flex items-center gap-3">
+        <Button
           type="button"
           onClick={useCurrentLocation}
-          className="button-secondary"
+          variant="outline"
           disabled={locating}
+          className="h-10 rounded-xl px-3 text-xs"
         >
-          {locating ? "Detecting..." : "Use current location"}
-        </button>
+          <LocateFixed className="h-3.5 w-3.5" aria-hidden />
+          {locating ? "Finding location..." : "Use my location"}
+        </Button>
         {searching ? (
-          <span className="text-sm text-[var(--color-muted)]">Searching...</span>
+          <span className="text-xs text-[var(--color-muted)]">Searching locations...</span>
         ) : null}
       </div>
 
       {suggestions.length > 0 ? (
-        <div className="grid gap-2 rounded-[24px] border border-[rgba(16,52,39,0.08)] bg-white p-3 shadow-[0_14px_30px_rgba(16,52,39,0.08)]">
+        <Card className="auth-location-suggestions grid gap-1.5 rounded-2xl p-2">
           {suggestions.map((suggestion) => (
             <button
               key={`${suggestion.label}-${suggestion.latitude}-${suggestion.longitude}`}
               type="button"
               onClick={() => chooseSuggestion(suggestion)}
-              className="rounded-[18px] px-4 py-3 text-left transition hover:bg-[rgba(245,237,222,0.72)]"
+              className="rounded-xl px-3 py-2.5 text-left transition hover:bg-white/10"
             >
               <p className="text-sm font-medium text-[var(--color-ink)]">
                 {suggestion.label}
@@ -313,34 +332,33 @@ export function LocationPicker({
               ) : null}
             </button>
           ))}
-        </div>
+        </Card>
       ) : null}
 
       {latitude !== undefined && longitude !== undefined && query ? (
-        <div className="surface-card p-4">
-          <p className="text-sm font-medium text-[var(--color-ink)]">Selected location</p>
-          <p className="mt-1 text-sm text-[var(--color-muted)]">{query}</p>
-        </div>
+        <Card className="auth-location-status flex items-center gap-3 rounded-2xl px-4 py-3">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-white/75">
+            <MapPin className="h-4 w-4" aria-hidden />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--color-muted)]">Selected location</p>
+            <p className="mt-1 truncate text-sm font-medium text-[var(--color-ink)]">{query}</p>
+          </div>
+        </Card>
       ) : null}
 
       {weather ? (
-        <div className="surface-card-muted p-4">
-          <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
-            Local conditions
-          </p>
-          <p className="mt-2 text-sm font-medium text-[var(--color-ink)]">
-            {weather.condition} · {Math.round(weather.temperatureC)}°C
-          </p>
-          <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
-            {weather.summary}
-          </p>
-          <p className="mt-2 text-xs text-[var(--color-muted)]">
-            High {Math.round(weather.todayHighC)}°C · Low {Math.round(weather.todayLowC)}°C · Rain chance {weather.rainProbability}%
-          </p>
-        </div>
+        <Card className="auth-location-status rounded-2xl px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[10px] uppercase tracking-[0.16em] text-[var(--color-muted)]">Local conditions</p>
+            <span className="text-sm font-semibold text-[var(--color-ink)]">{Math.round(weather.temperatureC)}°C</span>
+          </div>
+          <p className="mt-1 text-sm font-medium text-[var(--color-ink)]">{weather.condition}</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-muted)]">{weather.summary}</p>
+        </Card>
       ) : null}
 
-      {error ? <p className="field-hint text-[var(--color-copper)]">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--color-copper)]">{error}</p> : null}
     </div>
   );
 }

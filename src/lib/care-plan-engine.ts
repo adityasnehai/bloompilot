@@ -1,5 +1,6 @@
 import { getDatabase, withTransaction } from "@/lib/database";
 import type { ContextJson } from "@/lib/context-builder";
+import { isReminderWindowActive } from "@/lib/reminder-window";
 
 export type AgentTrace = {
   id: string;
@@ -123,6 +124,8 @@ export type ReminderReadinessItem = {
   plant_name: string;
   due_date: string;
   channels: string[];
+  reminder_window: string;
+  window_active: boolean;
   ready: boolean;
   blocker: string | null;
 };
@@ -227,6 +230,8 @@ type TaskAdherenceRow = {
 type DiagnosisRow = {
   plant_id: string;
   plant_nickname: string;
+  category: string;
+  evidence_status: "confirmed" | "needs_more_evidence";
   issue: string;
   severity: "low" | "medium" | "high";
   created_at: string;
@@ -236,6 +241,80 @@ function addDays(days: number) {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function containsSuppressedDiagnosisText(value: string | null | undefined) {
+  const text = value?.toLowerCase().trim() ?? "";
+  return text.includes("provider unavailable") || text.includes("needs more evidence");
+}
+
+function shouldKeepCarePlanAction(action: CarePlanAction) {
+  const actionText = [
+    action.title,
+    action.reason,
+    ...action.evidence_refs.map((ref) => `${ref.source} ${ref.supports}`),
+  ].join(" ");
+
+  return !containsSuppressedDiagnosisText(actionText);
+}
+
+function careActionKey(action: Pick<CarePlanAction, "plant_id" | "type" | "due_date">) {
+  return `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`;
+}
+
+function dedupeCareActions(actions: CarePlanAction[]) {
+  const seen = new Set<string>();
+  return actions.filter((action) => {
+    const key = careActionKey(action);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function sanitizeActionList(actions: CarePlanAction[]) {
+  return dedupeCareActions(actions.filter(shouldKeepCarePlanAction));
+}
+
+function sanitizeCarePlanOutput(plan: CarePlanOutput) {
+  const todayActions = sanitizeActionList(plan.today_actions);
+  const upcomingTasks = sanitizeActionList(plan.upcoming_tasks);
+  const rejectedActions = sanitizeActionList(plan.rejected_actions);
+  const careCalendar = plan.care_calendar
+    .map((group) => ({
+      ...group,
+      tasks: sanitizeActionList(group.tasks),
+    }))
+    .filter((group) => group.tasks.length > 0);
+  const taskIds = new Set([
+    ...todayActions.map((action) => action.id),
+    ...upcomingTasks.map((action) => action.id),
+    ...careCalendar.flatMap((group) => group.tasks.map((action) => action.id)),
+  ]);
+
+  return {
+    ...plan,
+    today_actions: todayActions,
+    upcoming_tasks: upcomingTasks,
+    rejected_actions: rejectedActions,
+    care_calendar: careCalendar,
+    reminder_readiness: plan.reminder_readiness.filter((item) => taskIds.has(item.action_id)),
+    recommendation_confidence: plan.recommendation_confidence.filter((item) =>
+      taskIds.has(item.action_id),
+    ),
+  } satisfies CarePlanOutput;
+}
+
+export function isCarePlanReasoningStale(plan: CarePlanOutput | null) {
+  if (!plan) return true;
+
+  const plannerActions = [...plan.today_actions, ...plan.upcoming_tasks].filter((action) =>
+    action.source_agents.includes("ReAct Care Planner"),
+  );
+
+  return plannerActions.some((action) =>
+    !action.evidence_refs.some((entry) => entry.source === "BloomPilot context builder"),
+  );
 }
 
 function getDailyForecast(context: ContextJson) {
@@ -330,15 +409,19 @@ export function getSuggestedWateringDays(
   if (!plant.pot_profile.drainage_holes) days += 2;
   if (plant.pot_profile.substrate_mix === "high_organic") days += 1;
   if (plant.pot_profile.substrate_mix === "high_mineral") days -= 1;
-  if (plant.growth_stage === "seedling" || plant.growth_stage === "flowering" || plant.growth_stage === "fruiting") days -= 1;
-  if (plant.growth_stage === "dormant") days += 2;
   if (plant.sunlight.label === "full_sun") days -= 1;
   if (plant.sunlight.label === "low_light") days += 1;
   if (context.environment.risk_flags.heat_stress) days -= 1;
   if ((context.environment.humidity_percent ?? 55) <= 40) days -= 1;
   if (context.environment.risk_flags.heavy_rain) days += 2;
-  if ((context.environment.soil_moisture ?? 0) >= 0.42) days += 1;
-  return Math.max(2, Math.min(12, days));
+  // Weather-adaptive soil moisture modifiers
+  const sm = context.environment.soil_moisture ?? 0.4;
+  if (sm > 0.65) days += 2;        // very wet — delay significantly
+  else if (sm >= 0.42) days += 1;  // moderately wet
+  else if (sm < 0.22) days -= 1;   // critically dry — water sooner
+  // High evapotranspiration means plants lose water faster
+  if ((context.environment.evapotranspiration_mm ?? 0) > 5) days -= 1;
+  return Math.max(2, Math.min(14, days));
 }
 
 function buildEvidenceRefs(
@@ -624,7 +707,9 @@ export function buildDiagnosisActions(
   const rows = database
     .prepare(
       `
-      SELECT plant_id, plant_nickname, issue, severity, created_at
+      SELECT plant_id, plant_nickname, category,
+             diagnosis_evidence_status as evidence_status,
+             issue, severity, created_at
       FROM diagnosis_runs
       WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-14 day')
       ORDER BY datetime(created_at) DESC
@@ -636,6 +721,10 @@ export function buildDiagnosisActions(
   const actions: CarePlanAction[] = [];
 
   for (const row of rows) {
+    if (row.evidence_status !== "confirmed") continue;
+    if (row.category === "healthy") continue;
+    if (row.issue === "Provider unavailable") continue;
+    if (row.issue === "Needs more evidence") continue;
     if (seenPlants.has(row.plant_id)) continue;
     seenPlants.add(row.plant_id);
     const sev = row.severity === "high" ? "high" : row.severity === "medium" ? "medium" : "low";
@@ -697,7 +786,10 @@ export function validateCareActions(actions: CarePlanAction[]) {
 }
 
 export function buildUpcomingTasks(actions: CarePlanAction[], context: ContextJson) {
-  const upcoming = actions.filter((action) => action.status === "approved").slice(0, 18);
+  const today = addDays(0);
+  const upcoming = actions
+    .filter((action) => action.status === "approved" && action.due_date > today)
+    .slice(0, 18);
 
   for (const plant of context.plants) {
     if (!plant.species) continue;
@@ -731,7 +823,7 @@ export function buildUpcomingTasks(actions: CarePlanAction[], context: ContextJs
     });
   }
 
-  return upcoming
+  return dedupeCareActions(upcoming)
     .sort((left, right) => left.due_date.localeCompare(right.due_date))
     .slice(0, 28);
 }
@@ -803,7 +895,9 @@ export function buildWeatherRiskForecast(context: ContextJson): WeatherRiskForec
   if (dailyForecast.length > 0) {
     return dailyForecast.slice(0, 7).map((day) => {
       const humidity = context.environment.humidity_percent;
-      const humidityStress = humidity !== null && (humidity <= 35 || humidity >= 85);
+      // The forecast payload has no daily humidity values. Only apply the
+      // measured humidity risk to today; do not project it across the week.
+      const humidityStress = day.date === addDays(0) && humidity !== null && (humidity <= 35 || humidity >= 85);
       return {
         date: day.date,
         heat_stress: day.heat_stress,
@@ -936,19 +1030,35 @@ export function buildReminderReadiness(
   context: ContextJson,
 ): ReminderReadinessItem[] {
   const channels = context.user.notification_preference.channels;
+  const reminderWindow = context.user.notification_preference.time_window;
+  const windowActive = isReminderWindowActive(
+    {
+      timezone: context.garden.location.timezone,
+      reminderWindow,
+    },
+    new Date(),
+  );
   return actions
     .filter((action) => action.status === "approved")
     .slice(0, 24)
     .map((action) => {
-      const ready = channels.length > 0 && action.due_date.length > 0;
+      const ready = channels.length > 0 && action.due_date.length > 0 && windowActive;
       return {
         action_id: action.id,
         title: action.title,
         plant_name: action.plant_name,
         due_date: action.due_date,
         channels,
+        reminder_window: reminderWindow,
+        window_active: windowActive,
         ready,
-        blocker: ready ? null : "Missing notification channel or due date.",
+        blocker: ready
+          ? null
+          : channels.length === 0
+            ? "Select at least one reminder channel."
+            : !windowActive
+              ? "Outside the selected reminder window."
+              : "Missing notification channel or due date.",
       };
     });
 }
@@ -1074,7 +1184,7 @@ function buildOutcomeTracking(userId: number): OutcomeTracking {
   const rows = database
     .prepare(
       `
-      SELECT plant_id, issue, severity, created_at
+      SELECT plant_id, issue, severity, diagnosis_evidence_status as evidence_status, category, created_at
       FROM diagnosis_runs
       WHERE user_id = ?
         AND datetime(created_at) >= datetime('now', '-30 day')
@@ -1083,9 +1193,17 @@ function buildOutcomeTracking(userId: number): OutcomeTracking {
     )
     .all(userId) as DiagnosisRow[];
 
-  const total = rows.length;
+  const confirmedRows = rows.filter(
+    (row) =>
+      row.evidence_status === "confirmed" &&
+      row.category !== "healthy" &&
+      row.issue !== "Provider unavailable" &&
+      row.issue !== "Needs more evidence",
+  );
+
+  const total = confirmedRows.length;
   const issueCountByPlant = new Map<string, Set<string>>();
-  for (const row of rows) {
+  for (const row of confirmedRows) {
     const key = `${row.plant_id}`;
     const set = issueCountByPlant.get(key) ?? new Set<string>();
     set.add(row.issue.toLowerCase().trim());
@@ -1154,7 +1272,11 @@ export function buildCarePlanOutput(params: {
         ]
       : params.context.evidence;
 
+  const todayActions = dedupeCareActions(
+    params.approvedActions.filter((action) => action.due_date === addDays(0)),
+  );
   const upcomingTasks = buildUpcomingTasks(params.approvedActions, params.context);
+  const scheduledActions = [...todayActions, ...upcomingTasks];
   const riskForecast = buildWeatherRiskForecast(params.context);
 
   return {
@@ -1175,9 +1297,11 @@ export function buildCarePlanOutput(params: {
       total_plants: params.context.plants.length,
       identified_plants: params.context.plants.filter((plant) => plant.species).length,
       active_risks: getRiskCount(params.context),
-      ready_for_reminders: params.approvedActions.length > 0,
+      ready_for_reminders:
+        params.approvedActions.some((action) => action.due_date && action.confidence >= 0.65) &&
+        params.context.user.notification_preference.channels.length > 0,
     },
-    today_actions: params.approvedActions.filter((action) => action.due_date === addDays(0)),
+    today_actions: todayActions,
     upcoming_tasks: upcomingTasks,
     plant_plans: params.plantPlans,
     weather_risks: getWeatherRisks(params.context),
@@ -1187,12 +1311,12 @@ export function buildCarePlanOutput(params: {
     agent_traces: params.traces,
     watering_forecast: buildWateringForecast(params.context),
     weather_risk_forecast: riskForecast,
-    care_calendar: buildCareCalendar(upcomingTasks),
+    care_calendar: buildCareCalendar(scheduledActions),
     setup_mismatches: buildSetupMismatches(params.context),
-    reminder_readiness: buildReminderReadiness(upcomingTasks, params.context),
+    reminder_readiness: buildReminderReadiness(scheduledActions, params.context),
     water_balance: buildWaterBalance(params.context),
     risk_horizon: buildRiskHorizon(params.context),
-    care_adherence: buildCareAdherence(params.userId, upcomingTasks, params.context),
+    care_adherence: buildCareAdherence(params.userId, scheduledActions, params.context),
     outcome_tracking: buildOutcomeTracking(params.userId),
     recommendation_confidence: buildRecommendationConfidence(params.approvedActions, params.context),
   } satisfies CarePlanOutput;
@@ -1283,7 +1407,7 @@ export function readLatestCarePlan(userId: number) {
   }
 
   try {
-    return JSON.parse(row.plan_json) as CarePlanOutput;
+    return sanitizeCarePlanOutput(JSON.parse(row.plan_json) as CarePlanOutput);
   } catch {
     return null;
   }
@@ -1351,10 +1475,24 @@ export function appendDiagnosisTreatmentActions(
     confidence: 0.9,
   };
 
-  const updatedPlan: CarePlanOutput = {
+  const alreadyQueued = [...plan.today_actions, ...plan.upcoming_tasks].some(
+    (action) =>
+      action.plant_id === diagnosis.plantId &&
+      action.type === actionType &&
+      action.due_date === today &&
+      action.status === "approved",
+  );
+
+  if (alreadyQueued) {
+    return;
+  }
+
+  const updatedTodayActions = [newAction, ...plan.today_actions];
+  const updatedPlan = sanitizeCarePlanOutput({
     ...plan,
-    today_actions: [newAction, ...plan.today_actions],
-  };
+    today_actions: updatedTodayActions,
+    care_calendar: buildCareCalendar([...updatedTodayActions, ...plan.upcoming_tasks]),
+  });
 
   const database = getDatabase();
   const latest = database

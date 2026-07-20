@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -31,22 +31,35 @@ class DiagnosisState(TypedDict, total=False):
 
 
 def _due_now(tasks: list[dict]) -> list[dict]:
-    return [task for task in tasks if task.get("status") == "open"][:3]
+    today = date.today().isoformat()
+    return sorted(
+        [
+            task for task in tasks
+            if task.get("status") == "open" and str(task.get("dueDate", ""))[:10] <= today
+        ],
+        key=lambda task: str(task.get("dueDate", "")),
+    )[:3]
 
 
 def _build_brief(state: BriefState) -> BriefState:
     request = state["request"]
     garden = request.workspace.garden
     priorities = _due_now([task.model_dump() for task in garden.tasks])
+    priority_ids = {task["id"] for task in priorities}
+    today = date.today().isoformat()
     focus = [
         {
             "id": plant.id,
             "nickname": plant.nickname,
             "species": plant.species,
-            "score": max(60, 94 - len(priorities) * 4),
-            "openCount": len(priorities),
-            "overdueCount": 0,
-            "recommendation": f"Keep {plant.nickname} inside the first half of the care window.",
+            "careReadiness": max(0, 100 - sum(20 for task in garden.tasks if task.plantId == plant.id and task.status == "open" and str(task.dueDate)[:10] < today)),
+            "openCount": sum(1 for task in garden.tasks if task.plantId == plant.id and task.status == "open"),
+            "overdueCount": sum(1 for task in garden.tasks if task.plantId == plant.id and task.status == "open" and str(task.dueDate)[:10] < today),
+            "recommendation": (
+                f"Complete {plant.nickname}'s overdue care first."
+                if any(task["id"] in priority_ids and task.get("plantId") == plant.id and str(task.get("dueDate", ""))[:10] < today for task in priorities)
+                else f"No overdue care is recorded for {plant.nickname}."
+            ),
         }
         for plant in garden.plants[:3]
     ]
@@ -62,8 +75,8 @@ def _build_brief(state: BriefState) -> BriefState:
         priorities=priorities,
         focusPlants=focus,
         recommendations=[
-            "External orchestration is now available for web and mobile clients.",
-            "Use the shared workspace payload to keep multiple surfaces in sync.",
+            "This brief is derived only from the submitted workspace snapshot.",
+            "Use the local web application to complete care and deliver notifications.",
         ],
         recap=[
             f"Request trigger: {request.trigger}.",
@@ -77,27 +90,29 @@ def _build_reminders(state: ReminderState) -> ReminderState:
     request = state["request"]
     garden = request.workspace.garden
     open_tasks = [task.model_dump() for task in garden.tasks if task.status == "open"]
-    deliveries = [
-        {
-            "id": f"delivery-{index}",
-            "channel": channel,
-            "status": "ready",
-            "title": f"{channel.title()} reminder batch ready",
-            "preview": f"{len(open_tasks[:4])} task(s) staged from the shared workspace payload.",
-            "scheduledWindow": "External service",
-            "items": [task["title"] for task in open_tasks[:4]] or ["No open care tasks in queue."],
-        }
-        for index, channel in enumerate(["email", "push"], start=1)
-    ]
+    deliveries = []
+    if open_tasks:
+        deliveries.append({
+            "id": "care-candidates",
+            "channel": "in_app",
+            "status": "candidate",
+            "title": "Care candidates for local delivery",
+            "preview": f"{len(open_tasks[:4])} open task(s) found in the workspace snapshot.",
+            "scheduledWindow": "Caller must apply delivery policy",
+            "items": [task["title"] for task in open_tasks[:4]],
+        })
+    today = date.today().isoformat()
+    overdue = [task for task in open_tasks if str(task.get("dueDate", ""))[:10] < today]
     payload = ReminderRunPayload(
         headline="External reminder sweep prepared.",
         summary=f"LangGraph staged reminder output for {len(garden.plants)} plant(s).",
         deliveryCount=len(deliveries),
-        urgentCount=len(open_tasks[:4]),
+        urgentCount=len(overdue),
         deliveries=deliveries,
         notes=[
             f"Request trigger: {request.trigger}.",
             f"Generated at {datetime.utcnow().isoformat()}Z.",
+            "No notification was sent by the external service.",
         ],
     )
     return {"request": request, "payload": payload}
@@ -105,51 +120,20 @@ def _build_reminders(state: ReminderState) -> ReminderState:
 
 def _build_diagnosis(state: DiagnosisState) -> DiagnosisState:
     request = state["request"]
-    symptoms = {symptom.lower() for symptom in request.symptoms}
-    observation = request.observation.lower()
-
-    if "webbing" in symptoms:
-        payload = DiagnosisResult(
-            issue="Spider mite pressure",
-            category="pest",
-            severity="high",
-            confidence=91,
-            summary=f"{request.plantNickname} likely has spider mite activity based on webbing in the uploaded report.",
-            treatment=[
-                "Isolate the plant from the rest of the collection.",
-                "Rinse leaf undersides thoroughly.",
-                "Repeat a targeted pest treatment within one week.",
-            ],
-            followUp="Inspect leaf joints again in 48 hours.",
-        )
-    elif "powdery_residue" in symptoms or "powder" in observation:
-        payload = DiagnosisResult(
-            issue="Powdery mildew risk",
-            category="fungal",
-            severity="high",
-            confidence=87,
-            summary=f"{request.plantNickname} is showing a likely fungal residue pattern.",
-            treatment=[
-                "Improve airflow around the plant.",
-                "Keep foliage dry during watering.",
-                "Apply a targeted fungicidal treatment.",
-            ],
-            followUp="Check spread again after the next watering cycle.",
-        )
-    else:
-        payload = DiagnosisResult(
-            issue="General plant stress",
-            category="observation",
-            severity="low",
-            confidence=63,
-            summary=f"{request.plantNickname} shows a mild stress signal with limited evidence.",
-            treatment=[
-                "Stay on the normal care cadence.",
-                "Capture a clearer follow-up photo in brighter light.",
-                "Compare the affected area after the next care cycle.",
-            ],
-            followUp="Re-run diagnosis if symptoms intensify.",
-        )
+    payload = DiagnosisResult(
+        issue="Needs more evidence",
+        category="observation",
+        severity="low",
+        confidence=0,
+        evidenceStatus="needs_more_evidence",
+        provider="external_agent",
+        summary=(
+            f"The external service cannot confirm a condition for {request.plantNickname} "
+            "because no plant image was provided. Use the web diagnosis flow for an image-backed assessment."
+        ),
+        treatment=[],
+        followUp="Upload a clear image through the web diagnosis flow before treating the plant.",
+    )
 
     return {"request": request, "payload": payload}
 

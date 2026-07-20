@@ -39,12 +39,19 @@ export type GardenTypeProfile = {
   plannerNote: string;
 };
 
+export type GardenTypeChoice = {
+  value: GardenTypeProfile["value"];
+  label: GardenTypeProfile["label"];
+  description: GardenTypeProfile["description"];
+  imagePath: GardenTypeProfile["imagePath"];
+};
+
 export const GARDEN_TYPES: GardenTypeProfile[] = [
   {
     value: "Indoor",
-    label: "Indoor",
-    description: "Plants inside the home near windows and shelves.",
-    imagePath: "/garden-types/indoor-collection.svg",
+    label: "Indoor collection",
+    description: "Plants live inside the home. Window light, humidity, and indoor airflow matter more than rain or wind.",
+    imagePath: "/garden-types/indoor.avif",
     exposure: "none",
     weatherAffected: false,
     frostRelevant: false,
@@ -53,13 +60,13 @@ export const GARDEN_TYPES: GardenTypeProfile[] = [
     uvExposed: false,
     rootSpace: "limited",
     wateringModifier: 0.85,
-    plannerNote: "Indoor garden: outdoor weather (frost, wind, rain) is irrelevant. Light comes through glass so UV is filtered. Soil dries slower than outdoor. Focus on light quality, humidity, and overwatering risk.",
+    plannerNote: "Indoor garden: outdoor weather is mostly irrelevant. Light is filtered through glass, humidity tends to be lower, and soil dries more slowly than outside. Focus on bright indirect light, airflow, and overwatering risk.",
   },
   {
     value: "Balcony",
-    label: "Balcony",
-    description: "Small outdoor setup with rail planters and compact pots.",
-    imagePath: "/garden-types/balcony-garden.svg",
+    label: "Balcony garden",
+    description: "Plants sit on a balcony or ledge in containers. Wind, reflected heat, and fast-drying pots matter more than ground soil.",
+    imagePath: "/garden-types/balcony.jpg",
     exposure: "partial",
     weatherAffected: true,
     frostRelevant: true,
@@ -68,13 +75,13 @@ export const GARDEN_TYPES: GardenTypeProfile[] = [
     uvExposed: true,
     rootSpace: "limited",
     wateringModifier: 1.0,
-    plannerNote: "Balcony garden: partial weather exposure. Walls block some wind. Pots dry out faster than ground. Frost and heavy rain are relevant.",
+    plannerNote: "Balcony garden: partial weather exposure. Walls block some wind, but reflected heat and container drying are still important. Frost, heavy rain, and wind gusts remain relevant.",
   },
   {
     value: "Backyard",
-    label: "Backyard",
-    description: "Larger outdoor growing space with beds or open ground.",
-    imagePath: "/garden-types/backyard-garden.svg",
+    label: "Backyard garden",
+    description: "Plants grow in open beds or ground soil. Roots get more buffering from the soil than in containers, but weather still matters.",
+    imagePath: "/garden-types/backyard.jpg",
     exposure: "full",
     weatherAffected: true,
     frostRelevant: true,
@@ -83,13 +90,13 @@ export const GARDEN_TYPES: GardenTypeProfile[] = [
     uvExposed: true,
     rootSpace: "unlimited",
     wateringModifier: 1.1,
-    plannerNote: "Backyard garden: full weather exposure. Ground beds retain more moisture than pots. All weather risks apply.",
+    plannerNote: "Backyard garden: full weather exposure. Ground beds retain moisture longer than pots, so irrigation is usually steadier. Heat, frost, rain, and wind all matter.",
   },
   {
     value: "Terrace",
-    label: "Terrace",
-    description: "Open rooftop or terrace exposed to sun and wind.",
-    imagePath: "/garden-types/terrace-rooftop-garden.svg",
+    label: "Terrace garden",
+    description: "Plants sit high up on a terrace or rooftop. Sun, wind, and evaporation are strongest here, so containers dry quickly.",
+    imagePath: "/garden-types/rooftop.jpg",
     exposure: "elevated",
     weatherAffected: true,
     frostRelevant: true,
@@ -98,22 +105,34 @@ export const GARDEN_TYPES: GardenTypeProfile[] = [
     uvExposed: true,
     rootSpace: "limited",
     wateringModifier: 1.3,
-    plannerNote: "Terrace/rooftop garden: maximum weather exposure. Elevated position means stronger wind and UV. Pots dry out very fast. Windbreaks and shade cloth often needed.",
+    plannerNote: "Terrace garden: maximum exposure. Elevated rooftops get stronger wind, more UV, and faster evaporation. Windbreaks, shade cloth, and frequent moisture checks are often needed.",
+  },
+];
+
+export const GARDEN_TYPE_CHOICES: GardenTypeChoice[] = [
+  {
+    value: "Indoor",
+    label: "Indoor collection",
+    description: "Inside, with filtered light and slower-drying soil.",
+    imagePath: GARDEN_TYPES[0].imagePath,
   },
   {
-    value: "Container Garden",
-    label: "Container Garden",
-    description: "Movable pots and containers on a patio or hard surface.",
-    imagePath: "/garden-types/patio-container-garden.svg",
-    exposure: "partial",
-    weatherAffected: true,
-    frostRelevant: true,
-    windRelevant: false,
-    rainRelevant: true,
-    uvExposed: true,
-    rootSpace: "limited",
-    wateringModifier: 1.05,
-    plannerNote: "Container garden: pots outdoors, movable. Wind exposure is low (ground level, sheltered). Rain and frost still relevant. Containers drain freely so watch for drying out.",
+    value: "Balcony",
+    label: "Balcony garden",
+    description: "Containers exposed to wind, sun, and rain.",
+    imagePath: GARDEN_TYPES[1].imagePath,
+  },
+  {
+    value: "Backyard",
+    label: "Backyard garden",
+    description: "Open beds with deeper soil and full weather.",
+    imagePath: GARDEN_TYPES[2].imagePath,
+  },
+  {
+    value: "Terrace",
+    label: "Terrace garden",
+    description: "Rooftop containers with strong sun and wind.",
+    imagePath: GARDEN_TYPES[3].imagePath,
   },
 ];
 
@@ -131,13 +150,15 @@ const VALUE_ALIASES: Record<string, string> = {
   "backyard": "Backyard",
   "Terrace or rooftop garden": "Terrace",
   "terrace or rooftop garden": "Terrace",
+  "Terrace garden": "Terrace",
+  "terrace garden": "Terrace",
   "terrace": "Terrace",
   "rooftop": "Terrace",
-  "Patio or container garden": "Container Garden",
-  "patio or container garden": "Container Garden",
-  "patio": "Container Garden",
-  "container garden": "Container Garden",
-  "Container / Patio": "Container Garden",
+  "Patio or container garden": "Balcony",
+  "patio or container garden": "Balcony",
+  "patio": "Balcony",
+  "container garden": "Balcony",
+  "Container / Patio": "Balcony",
 };
 
 const profileMap = new Map<string, GardenTypeProfile>(

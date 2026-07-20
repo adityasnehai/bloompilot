@@ -18,18 +18,19 @@ export default async function GardenPage() {
 
   return (
     <div className="grid gap-6">
-      <section className="surface-panel px-5 py-6 sm:px-6">
-        <p className="text-sm text-[var(--color-muted)]">Garden</p>
-        <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">Add plants</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
-          Search by common name or upload a photo, then confirm placement, sunlight, soil and watering mode.
+      <header className="border-b border-[var(--color-line)] pb-5">
+        <p className="eyebrow">Plants</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-[var(--color-ink)] lg:text-3xl">Your plant collection</h1>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-muted)]">
+          Search for a plant or identify one from a photo, then manage the plants you have.
         </p>
-        <div className="mt-6">
-          <AddPlantWorkflow
-            initialPlants={gardenState.plants}
-            defaultPlacement={defaultPlacement}
-          />
-        </div>
+      </header>
+
+      <section className="min-w-0">
+        <AddPlantWorkflow
+          initialPlants={gardenState.plants}
+          defaultPlacement={defaultPlacement}
+        />
       </section>
     </div>
   );

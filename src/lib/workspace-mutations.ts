@@ -65,15 +65,19 @@ export function coercePlantInput(input: Record<string, unknown>): PlantInput | n
     typeof input.wateringIntervalDays === "number"
       ? input.wateringIntervalDays
       : typeof input.wateringIntervalDays === "string"
-        ? Number.parseInt(input.wateringIntervalDays, 10)
+        ? Number(input.wateringIntervalDays)
         : Number.NaN;
 
   if (
     !nickname ||
+    nickname.length > 120 ||
     !species ||
+    species.length > 200 ||
     species.toLowerCase().includes("unknown") ||
-    Number.isNaN(rawInterval) ||
-    rawInterval < 1
+    !Number.isInteger(rawInterval) ||
+    rawInterval < 1 ||
+    rawInterval > 3650 ||
+    notes.length > 2000
   ) {
     return null;
   }
@@ -131,6 +135,15 @@ export async function updatePlantMutation(plantId: string, input: PlantInput) {
 export async function removePlantMutation(plantId: string) {
   const userId = await getCurrentWorkspaceUserId();
   const gardenState = await readGardenState();
+  const plant = gardenState.plants.find((entry) => entry.id === plantId) ?? null;
+
+  if (!plant) {
+    return {
+      garden: gardenState,
+      plant: null,
+    };
+  }
+
   const nextState = removePlantFromGarden(gardenState, plantId);
 
   await writeGardenState(nextState);
@@ -141,6 +154,7 @@ export async function removePlantMutation(plantId: string) {
 
   return {
     garden: nextState,
+    plant,
   };
 }
 
@@ -161,12 +175,12 @@ export async function toggleTaskMutation(taskId: string) {
     if (userId) {
       const completing = prevTask.status === "open";
       const eventTypeMap: Partial<Record<string, HealthEventType>> = {
-        water: completing ? "watered" : "water_skipped",
-        inspect: completing ? "inspected" : undefined,
-        feed: completing ? "fertilized" : undefined,
+        water: "watered",
+        inspect: "inspected",
+        feed: "fertilized",
       };
       const eventType = eventTypeMap[prevTask.kind];
-      if (eventType) {
+      if (completing && eventType) {
         logHealthEvent(
           userId,
           plant.id,

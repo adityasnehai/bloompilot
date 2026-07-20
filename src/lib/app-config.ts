@@ -10,5 +10,8 @@ export const appConfig = {
   supportEmail: process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "hello@bloompilot.app",
   sessionCookieName: process.env.SESSION_COOKIE_NAME ?? "bloompilot_session",
   gardenCookieName: process.env.GARDEN_COOKIE_NAME ?? "bloompilot_garden",
-  strictProductionMode: process.env.STRICT_PRODUCTION_MODE !== "false",
+  // Local development should remain usable when optional evidence providers are
+  // unavailable; production can opt into the strict evidence gate explicitly.
+  strictProductionMode:
+    process.env.NODE_ENV === "production" && process.env.STRICT_PRODUCTION_MODE !== "false",
 } as const;

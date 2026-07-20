@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useCallback } from "react";
+import { AlertTriangle, CalendarDays, CheckCircle2, ListChecks } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { TaskCard, type CareTask } from "@/components/garden/task-card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type Plant = { id: string; nickname: string };
 
@@ -14,227 +18,193 @@ type TasksViewProps = {
   plantMap: [string, Plant][];
 };
 
-const KIND_OPTIONS = [
-  { value: "all", label: "All types" },
-  { value: "water", label: "Water" },
-  { value: "inspect", label: "Inspect" },
-  { value: "feed", label: "Feed" },
-];
-
 export function TasksView({ overdueTasks, dueTodayTasks, upcomingTasks, completedTasks, plantMap: plantMapEntries }: TasksViewProps) {
-  const [search, setSearch] = useState("");
-  const [kindFilter, setKindFilter] = useState("all");
+  const router = useRouter();
   const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const [localDone, setLocalDone] = useState<Set<string>>(new Set());
   const plantMap = new Map(plantMapEntries);
 
-  const batchAction = useCallback(async (taskIds: string[], action: "done" | "skip") => {
+  const batchAction = useCallback(async (taskIds: string[]) => {
     if (taskIds.length === 0) return;
     setBatchLoading(true);
+    setBatchError(null);
     try {
-      await fetch("/api/tasks/batch", {
+      const response = await fetch("/api/tasks/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskIds, action }),
+        body: JSON.stringify({ taskIds, action: "done" }),
       });
+      if (!response.ok) throw new Error("Unable to update tasks");
       setLocalDone((prev) => new Set([...prev, ...taskIds]));
+      router.refresh();
+    } catch {
+      setBatchError("Could not update the selected tasks. Try again.");
+      setLocalDone((prev) => {
+        const next = new Set(prev);
+        taskIds.forEach((id) => next.delete(id));
+        return next;
+      });
     } finally {
       setBatchLoading(false);
     }
-  }, []);
+  }, [router]);
 
   const allActiveTasks = useMemo(
     () => [...overdueTasks, ...dueTodayTasks, ...upcomingTasks],
     [overdueTasks, dueTodayTasks, upcomingTasks],
   );
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return allActiveTasks.filter((task) => {
-      const name = (plantMap.get(task.plantId)?.nickname ?? "").toLowerCase();
-      const title = task.title.toLowerCase();
-      const matchesSearch = !q || name.includes(q) || title.includes(q);
-      const matchesKind = kindFilter === "all" || task.kind === kindFilter;
-      return matchesSearch && matchesKind;
-    });
-  }, [allActiveTasks, search, kindFilter, plantMap]);
-
-  const overdueFiltered = filtered.filter((t) => overdueTasks.some((o) => o.id === t.id));
-  const todayFiltered = filtered.filter((t) => dueTodayTasks.some((o) => o.id === t.id));
-  const upcomingFiltered = filtered.filter((t) => upcomingTasks.some((o) => o.id === t.id));
-
-  const isFiltering = search.trim() !== "" || kindFilter !== "all";
+  const overdueVisible = overdueTasks.filter((task) => !localDone.has(task.id));
+  const todayVisible = dueTodayTasks.filter((task) => !localDone.has(task.id));
+  const upcomingVisible = upcomingTasks.filter((task) => !localDone.has(task.id));
+  const activeCount = allActiveTasks.filter((task) => !localDone.has(task.id)).length;
+  const completedVisible = completedTasks.slice(0, 5);
 
   return (
     <div className="grid gap-6">
-      <section className="surface-panel px-5 py-6 sm:px-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm text-[var(--color-muted)]">Tasks</p>
-            <h2 className="mt-2 text-2xl font-semibold text-[var(--color-ink)]">Care queue</h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--color-muted)]">
-              Overdue, due today, upcoming, and recently completed tasks.
-            </p>
+      <section className="border-b border-[var(--color-line)] pb-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="eyebrow">Tasks</p>
+            <h1 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-[var(--color-ink)] lg:text-3xl">Care queue</h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-muted)]">Do what is due now, then follow the next care items in order.</p>
           </div>
-          <Link href="/garden" className="button-secondary">Add more plants</Link>
+          <Button asChild variant="outline" size="sm" className="w-fit rounded-lg">
+            <Link href="/garden">Manage plants</Link>
+          </Button>
         </div>
-
-        {/* Search + filter bar */}
-        <div className="mt-5 flex flex-wrap gap-3">
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by plant or task…"
-            className="h-9 min-w-[200px] flex-1 rounded-xl border border-[var(--color-line)] bg-white px-3 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-canopy)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--color-canopy)]/20"
-          />
-          <div className="flex gap-1.5">
-            {KIND_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setKindFilter(opt.value)}
-                className={`h-9 rounded-xl border px-3 text-xs font-medium transition ${
-                  kindFilter === opt.value
-                    ? "border-[var(--color-canopy)]/30 bg-[var(--color-canopy)] text-white"
-                    : "border-[var(--color-line)] bg-white text-[var(--color-muted)] hover:bg-[var(--color-canvas-soft)]"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-3 py-3">
+            <div className="flex items-center gap-2 text-[var(--color-muted)]">
+              <ListChecks className="h-4 w-4 text-[var(--color-canopy)]" />
+              <span className="text-[11px] uppercase tracking-[0.14em]">Open</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold text-[var(--color-ink)]">{activeCount}</p>
           </div>
-          {isFiltering && (
-            <button
-              type="button"
-              onClick={() => { setSearch(""); setKindFilter("all"); }}
-              className="h-9 rounded-xl border border-[var(--color-line)] bg-white px-3 text-xs text-[var(--color-muted)] hover:text-[var(--color-ink)]"
-            >
-              Clear
-            </button>
-          )}
+          <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-3 py-3">
+            <div className="flex items-center gap-2 text-[var(--color-muted)]">
+              <CalendarDays className="h-4 w-4 text-[var(--color-canopy)]" />
+              <span className="text-[11px] uppercase tracking-[0.14em]">Due today</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold text-[var(--color-ink)]">{todayVisible.length}</p>
+          </div>
+          <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-3 py-3">
+            <div className="flex items-center gap-2 text-[var(--color-muted)]">
+              <AlertTriangle className="h-4 w-4 text-[var(--color-copper)]" />
+              <span className="text-[11px] uppercase tracking-[0.14em]">Overdue</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold text-[var(--color-ink)]">{overdueVisible.length}</p>
+          </div>
+          <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-3 py-3">
+            <div className="flex items-center gap-2 text-[var(--color-muted)]">
+              <CheckCircle2 className="h-4 w-4 text-[var(--color-muted)]" />
+              <span className="text-[11px] uppercase tracking-[0.14em]">Recent</span>
+            </div>
+            <p className="mt-2 text-2xl font-bold text-[var(--color-ink)]">{completedVisible.length}</p>
+          </div>
         </div>
-        {isFiltering && (
-          <p className="mt-2 text-xs text-[var(--color-muted)]">
-            {filtered.length} {filtered.length === 1 ? "task" : "tasks"} match
-          </p>
-        )}
       </section>
 
-      {isFiltering ? (
-        <section className="surface-panel px-5 py-6 sm:px-6">
-          <h3 className="text-lg font-semibold text-[var(--color-ink)]">Results</h3>
-          <div className="mt-4 grid gap-4">
-            {filtered.length > 0 ? (
-              filtered.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"}
-                  returnTo="/tasks"
-                />
-              ))
-            ) : (
-              <p className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-5 text-sm text-[var(--color-muted)]">
-                No tasks match your search.
-              </p>
+      {batchError ? <p role="alert" className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-[var(--color-muted)]">{batchError}</p> : null}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card as="section" className="rounded-xl p-4 shadow-none sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Overdue</p>
+              <h2 className="mt-1 text-lg font-bold text-[var(--color-ink)]">Fix these first</h2>
+            </div>
+            {overdueVisible.length > 0 && (
+              <Button
+                type="button"
+                disabled={batchLoading}
+                onClick={() => batchAction(overdueVisible.map((t) => t.id))}
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg text-xs"
+              >
+                Mark all done
+              </Button>
             )}
           </div>
-        </section>
-      ) : (
-        <>
-          <div className="grid gap-6 xl:grid-cols-2">
-            <section className="surface-panel px-5 py-6 sm:px-6">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm text-[var(--color-muted)]">Overdue</p>
-                  <h3 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">Recovery tasks</h3>
-                </div>
-                {overdueFiltered.filter((t) => !localDone.has(t.id)).length > 0 && (
-                  <button
-                    type="button"
-                    disabled={batchLoading}
-                    onClick={() => batchAction(overdueFiltered.filter((t) => !localDone.has(t.id)).map((t) => t.id), "done")}
-                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition"
-                  >
-                    Mark all done
-                  </button>
-                )}
-              </div>
-              <div className="mt-5 grid gap-4">
-                {overdueFiltered.filter((t) => !localDone.has(t.id)).length > 0 ? (
-                  overdueFiltered.filter((t) => !localDone.has(t.id)).map((task) => (
-                    <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} returnTo="/tasks" />
-                  ))
-                ) : (
-                  <div className="surface-card px-4 py-4 text-sm text-[var(--color-moss)]">No overdue tasks right now.</div>
-                )}
-              </div>
-            </section>
-
-            <section className="surface-panel px-5 py-6 sm:px-6">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-sm text-[var(--color-muted)]">Today</p>
-                  <h3 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">Due now</h3>
-                </div>
-                {todayFiltered.filter((t) => !localDone.has(t.id)).length > 0 && (
-                  <button
-                    type="button"
-                    disabled={batchLoading}
-                    onClick={() => batchAction(todayFiltered.filter((t) => !localDone.has(t.id)).map((t) => t.id), "done")}
-                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition"
-                  >
-                    Mark all done
-                  </button>
-                )}
-              </div>
-              <div className="mt-5 grid gap-4">
-                {todayFiltered.filter((t) => !localDone.has(t.id)).length > 0 ? (
-                  todayFiltered.filter((t) => !localDone.has(t.id)).map((task) => (
-                    <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} returnTo="/tasks" />
-                  ))
-                ) : (
-                  <div className="surface-card-muted px-4 py-4 text-sm text-[var(--color-muted)]">Nothing due today.</div>
-                )}
-              </div>
-            </section>
+          <div className="mt-4 grid gap-2">
+            {overdueVisible.length > 0 ? (
+              overdueVisible.map((task) => (
+                <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} />
+              ))
+            ) : (
+              <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-xs text-[var(--color-muted)]">No overdue tasks right now.</div>
+            )}
           </div>
+        </Card>
 
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="surface-panel px-5 py-6 sm:px-6">
-              <p className="text-sm text-[var(--color-muted)]">Upcoming</p>
-              <h3 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">Next scheduled care</h3>
-              <div className="mt-5 grid gap-4">
-                {upcomingFiltered.length > 0 ? (
-                  upcomingFiltered.map((task) => (
-                    <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} returnTo="/tasks" />
-                  ))
-                ) : (
-                  <div className="surface-card-muted px-4 py-4 text-sm text-[var(--color-muted)]">Upcoming tasks will appear as the queue rolls forward.</div>
-                )}
-              </div>
-            </section>
-
-            <aside className="surface-panel px-5 py-6">
-              <p className="text-sm text-[var(--color-muted)]">Completed</p>
-              <h3 className="mt-1 text-xl font-semibold text-[var(--color-ink)]">Recent wins</h3>
-              <div className="mt-5 grid gap-3">
-                {completedTasks.length > 0 ? (
-                  completedTasks.map((task) => (
-                    <div key={task.id} className="surface-card px-4 py-4">
-                      <p className="text-sm font-medium text-[var(--color-ink)]">{task.title}</p>
-                      <p className="mt-2 text-sm text-[var(--color-muted)]">{plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"}</p>
-                    </div>
-                  ))
-                ) : (
-                  <div className="surface-card px-4 py-4 text-sm text-[var(--color-muted)]">Completed tasks will appear here.</div>
-                )}
-              </div>
-            </aside>
+        <Card as="section" className="rounded-xl p-4 shadow-none sm:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Today</p>
+              <h2 className="mt-1 text-lg font-bold text-[var(--color-ink)]">Do these now</h2>
+            </div>
+            {todayVisible.length > 0 && (
+              <Button
+                type="button"
+                disabled={batchLoading}
+                onClick={() => batchAction(todayVisible.map((t) => t.id))}
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-lg text-xs"
+              >
+                Mark all done
+              </Button>
+            )}
           </div>
-        </>
-      )}
+          <div className="mt-4 grid gap-2">
+            {todayVisible.length > 0 ? (
+              todayVisible.map((task) => (
+                <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} />
+              ))
+            ) : (
+              <div className="rounded-lg border border-[var(--color-line)] bg-white/5 px-3 py-3 text-xs text-[var(--color-muted)]">Nothing due today.</div>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card as="section" className="rounded-xl p-4 shadow-none sm:p-5">
+          <p className="eyebrow">Upcoming</p>
+          <h2 className="mt-1 text-lg font-bold text-[var(--color-ink)]">Next scheduled care</h2>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">Open tasks due after today and within the queue window.</p>
+          <div className="mt-4 grid gap-2">
+            {upcomingVisible.length > 0 ? (
+              upcomingVisible.slice(0, 12).map((task) => (
+                <TaskCard key={task.id} task={task} plantName={plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"} />
+              ))
+            ) : (
+              <div className="rounded-lg border border-[var(--color-line)] bg-white/5 px-3 py-3 text-xs text-[var(--color-muted)]">Upcoming tasks will appear as the queue rolls forward.</div>
+            )}
+            {upcomingVisible.length > 12 ? <p className="text-xs text-[var(--color-muted)]">Showing the next 12 scheduled tasks.</p> : null}
+          </div>
+        </Card>
+
+        <Card as="aside" className="rounded-xl p-4 shadow-none sm:p-5">
+          <p className="eyebrow">Completed</p>
+          <h2 className="mt-1 text-lg font-bold text-[var(--color-ink)]">Recent care</h2>
+          <p className="mt-1 text-xs text-[var(--color-muted)]">The latest finished tasks stay visible here.</p>
+          <div className="mt-4 grid gap-2">
+            {completedVisible.length > 0 ? (
+              completedVisible.map((task) => (
+                <div key={task.id} className="rounded-lg border border-[var(--color-line)] bg-white/5 px-3 py-3">
+                  <p className="text-xs font-semibold text-[var(--color-ink)]">{task.title}</p>
+                  <p className="mt-1 text-[11px] text-[var(--color-muted)]">{plantMap.get(task.plantId)?.nickname ?? "Plant unavailable"}</p>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-lg border border-[var(--color-line)] bg-white/5 px-3 py-3 text-xs text-[var(--color-muted)]">Completed tasks will appear here.</div>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   type GardenState,
   type Plant,
 } from "@/lib/garden";
-import { readRecentDiagnosisRuns } from "@/lib/diagnosis";
+import { readCareRelevantDiagnosisRuns } from "@/lib/diagnosis";
 
 export type DailyBriefToolResult = {
   garden: GardenState;
@@ -43,5 +43,5 @@ export async function createDailyBrief() {
 }
 
 export async function getDiagnosisHistory(limit = 5) {
-  return readRecentDiagnosisRuns(limit);
+  return readCareRelevantDiagnosisRuns(limit);
 }

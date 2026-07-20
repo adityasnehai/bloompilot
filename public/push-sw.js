@@ -1,3 +1,11 @@
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 self.addEventListener("push", (event) => {
   let payload = {
     title: "BloomPilot reminder",
@@ -23,6 +31,8 @@ self.addEventListener("push", (event) => {
       body,
       icon: "/next.svg",
       badge: "/next.svg",
+      tag: payload.id || "bloompilot-reminder",
+      renotify: true,
       data: payload,
     }),
   );

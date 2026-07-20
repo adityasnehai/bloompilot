@@ -1,0 +1,1285 @@
+{
+  "meta": {
+    "startedAt": "2026-07-20T17:06:33.993Z",
+    "baseUrl": "http://localhost:3000",
+    "methodology": "All fixtures are real accounts created via the live sign-up + onboarding + plant-setup UI. Weather is fetched live per-location from Open-Meteo by the app's own backend, not mocked. Evidence-source allow-list is extracted programmatically from literal `source:` string assignments across src/lib/*.ts (see eval/README.md). No human labeling or grading was used anywhere in this run.",
+    "finishedAt": "2026-07-20T17:08:46.171Z"
+  },
+  "fixtures": [
+    {
+      "id": "mumbai-balcony",
+      "label": "Mumbai, India — Balcony — tropical monsoon",
+      "email": "eval-mumbai-balcony-1784567194082@bloompilot.app",
+      "plantsRequested": [
+        "Tomato",
+        "Basil"
+      ],
+      "plantsAdded": [
+        "Tomato",
+        "Basil"
+      ],
+      "landedUrl": "http://localhost:3000/agent",
+      "log": [
+        "sign-up ok (1155ms)",
+        "onboarding wizard ok (5744ms)"
+      ],
+      "status": "created"
+    },
+    {
+      "id": "phoenix-backyard",
+      "label": "Phoenix, Arizona — Backyard — hot desert",
+      "email": "eval-phoenix-backyard-1784567215618@bloompilot.app",
+      "plantsRequested": [
+        "Rosemary",
+        "Aloe vera"
+      ],
+      "plantsAdded": [
+        "Rosemary",
+        "Aloe vera"
+      ],
+      "landedUrl": "http://localhost:3000/agent",
+      "log": [
+        "sign-up ok (976ms)",
+        "onboarding wizard ok (6733ms)"
+      ],
+      "status": "created"
+    },
+    {
+      "id": "reykjavik-balcony",
+      "label": "Reykjavik, Iceland — Balcony — subpolar oceanic",
+      "email": "eval-reykjavik-balcony-1784567237982@bloompilot.app",
+      "plantsRequested": [
+        "Mint"
+      ],
+      "plantsAdded": [
+        "Mint"
+      ],
+      "landedUrl": "http://localhost:3000/agent",
+      "log": [
+        "sign-up ok (1052ms)",
+        "onboarding wizard ok (5728ms)"
+      ],
+      "status": "created"
+    },
+    {
+      "id": "singapore-indoor",
+      "label": "Singapore — Indoor — tropical rainforest",
+      "email": "eval-singapore-indoor-1784567253379@bloompilot.app",
+      "plantsRequested": [
+        "Fern",
+        "Pothos"
+      ],
+      "plantsAdded": [
+        "Fern",
+        "Pothos"
+      ],
+      "landedUrl": "http://localhost:3000/dashboard",
+      "log": [
+        "sign-up ok (899ms)",
+        "onboarding wizard ok (5754ms)"
+      ],
+      "status": "created"
+    },
+    {
+      "id": "london-backyard",
+      "label": "London, UK — Backyard — temperate oceanic",
+      "email": "eval-london-backyard-1784567274683@bloompilot.app",
+      "plantsRequested": [
+        "Lavender"
+      ],
+      "plantsAdded": [
+        "Lavender"
+      ],
+      "landedUrl": "http://localhost:3000/agent",
+      "log": [
+        "sign-up ok (818ms)",
+        "onboarding wizard ok (6113ms)"
+      ],
+      "status": "created"
+    },
+    {
+      "id": "denver-empty",
+      "label": "Denver, Colorado — Balcony — EDGE CASE: zero plants",
+      "email": "eval-denver-empty-1784567290234@bloompilot.app",
+      "plantsRequested": [],
+      "plantsAdded": [],
+      "landedUrl": "http://localhost:3000/dashboard",
+      "log": [
+        "sign-up ok (899ms)",
+        "onboarding wizard ok (5738ms)"
+      ],
+      "status": "created"
+    }
+  ],
+  "carePlanEval": [
+    {
+      "fixtureId": "mumbai-balcony",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 1694,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "7 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain active, no contradictory watering-push actions"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 4,
+            "healthScore": 76,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": true,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 4
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 299,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "7 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain active, no contradictory watering-push actions"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 4,
+            "healthScore": 76,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": true,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 4
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    },
+    {
+      "fixtureId": "phoenix-backyard",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 347,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "5 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 3,
+            "healthScore": 76,
+            "weatherRisks": {
+              "heat_stress": true,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 3
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 335,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "5 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 3,
+            "healthScore": 76,
+            "weatherRisks": {
+              "heat_stress": true,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 3
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    },
+    {
+      "fixtureId": "reykjavik-balcony",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 349,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "2 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 2,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 2
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 364,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "2 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 2,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 2
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    },
+    {
+      "fixtureId": "singapore-indoor",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 360,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "3 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 3,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 3
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 348,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "3 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 3,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 3
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    },
+    {
+      "fixtureId": "london-backyard",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 369,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "2 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 2,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 2
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 364,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "2 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": true,
+                "detail": "n/a"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 2,
+            "healthScore": 82,
+            "weatherRisks": {
+              "heat_stress": false,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": false,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 2
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    },
+    {
+      "fixtureId": "denver-empty",
+      "runs": [
+        {
+          "run": 1,
+          "status": 200,
+          "ms": 35,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "0 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": {
+                  "health_score": 50,
+                  "health_band": "needs_attention",
+                  "total_plants": 0,
+                  "identified_plants": 0,
+                  "active_risks": 3,
+                  "ready_for_reminders": false
+                },
+                "detail": "0-plant fixture produced a well-formed (possibly empty) plan"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 0,
+            "healthScore": 50,
+            "weatherRisks": {
+              "heat_stress": true,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": true,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 0
+        },
+        {
+          "run": 2,
+          "status": 200,
+          "ms": 34,
+          "evalResult": {
+            "checks": [
+              {
+                "name": "schema_required_keys_present",
+                "pass": true,
+                "detail": "all present"
+              },
+              {
+                "name": "evidence_grounding_no_hallucinated_sources",
+                "pass": true,
+                "detail": "0 evidence refs, all sources recognized"
+              },
+              {
+                "name": "referential_integrity_action_plant_ids",
+                "pass": true,
+                "detail": "all action plant_id refs resolve"
+              },
+              {
+                "name": "no_duplicate_actions",
+                "pass": true,
+                "detail": "no duplicates"
+              },
+              {
+                "name": "weather_constraint_no_watering_push_on_heavy_rain",
+                "pass": true,
+                "detail": "heavy_rain not active for this run, check not applicable"
+              },
+              {
+                "name": "no_overlap_between_approved_and_rejected",
+                "pass": true,
+                "detail": "disjoint sets"
+              },
+              {
+                "name": "all_7_pipeline_agents_ran",
+                "pass": true,
+                "detail": "7/7 agent traces present"
+              },
+              {
+                "name": "empty_garden_handled_without_crash",
+                "pass": {
+                  "health_score": 50,
+                  "health_band": "needs_attention",
+                  "total_plants": 0,
+                  "identified_plants": 0,
+                  "active_risks": 3,
+                  "ready_for_reminders": false
+                },
+                "detail": "0-plant fixture produced a well-formed (possibly empty) plan"
+              }
+            ],
+            "passRate": 100,
+            "fallbackUsed": true,
+            "actionCount": 0,
+            "healthScore": 50,
+            "weatherRisks": {
+              "heat_stress": true,
+              "frost_risk": false,
+              "heavy_rain": false,
+              "high_uv": true,
+              "humidity_stress": true,
+              "source": "open_meteo"
+            }
+          },
+          "actionCount": 0
+        }
+      ],
+      "bothRunsSucceeded": true,
+      "actionCountStableAcrossRuns": true
+    }
+  ],
+  "diagnosisEval": [
+    {
+      "fixtureId": "mumbai-balcony",
+      "image": "diag-leaf.jpg",
+      "status": 200,
+      "ms": 2847,
+      "responseSchemaValid": true,
+      "confidence": 100,
+      "issue": "Looks healthy",
+      "evidenceStatus": "confirmed"
+    },
+    {
+      "fixtureId": "mumbai-balcony",
+      "image": "infected.png",
+      "status": 200,
+      "ms": 2284,
+      "responseSchemaValid": true,
+      "confidence": 43,
+      "issue": "water excess or uneven watering",
+      "evidenceStatus": "needs_more_evidence"
+    },
+    {
+      "fixtureId": "phoenix-backyard",
+      "image": "diag-leaf.jpg",
+      "status": 200,
+      "ms": 1399,
+      "responseSchemaValid": true,
+      "confidence": 100,
+      "issue": "Looks healthy",
+      "evidenceStatus": "confirmed"
+    },
+    {
+      "fixtureId": "phoenix-backyard",
+      "image": "infected.png",
+      "status": 200,
+      "ms": 4216,
+      "responseSchemaValid": true,
+      "confidence": 43,
+      "issue": "water excess or uneven watering",
+      "evidenceStatus": "needs_more_evidence"
+    }
+  ],
+  "reminderEval": [
+    {
+      "fixtureId": "mumbai-balcony",
+      "status": 200,
+      "ms": 926,
+      "sent": 0,
+      "suppressed": 7,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 7,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=Asia/Kolkata nowLocal=22:38 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    },
+    {
+      "fixtureId": "phoenix-backyard",
+      "status": 200,
+      "ms": 32,
+      "sent": 0,
+      "suppressed": 6,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 6,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=America/Phoenix nowLocal=10:08 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    },
+    {
+      "fixtureId": "reykjavik-balcony",
+      "status": 200,
+      "ms": 32,
+      "sent": 0,
+      "suppressed": 4,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 4,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=Atlantic/Reykjavik nowLocal=17:08 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    },
+    {
+      "fixtureId": "singapore-indoor",
+      "status": 200,
+      "ms": 33,
+      "sent": 0,
+      "suppressed": 6,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 6,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=Asia/Singapore nowLocal=1:08 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    },
+    {
+      "fixtureId": "london-backyard",
+      "status": 200,
+      "ms": 34,
+      "sent": 0,
+      "suppressed": 4,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 4,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=Europe/London nowLocal=18:08 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    },
+    {
+      "fixtureId": "denver-empty",
+      "status": 200,
+      "ms": 35,
+      "sent": 0,
+      "suppressed": 0,
+      "failed": 0,
+      "queued": 0,
+      "deliveryCount": 0,
+      "suppressionReasonCount": 0,
+      "channelSumsMatch": true,
+      "internallyConsistent": true,
+      "windowClaimVerified": true,
+      "windowClaimDetail": "tz=America/Denver nowLocal=11:08 window=07:00 AM-09:00 AM appClaims=false independentlyComputed=false"
+    }
+  ],
+  "robustnessEval": [
+    {
+      "name": "unauth_dashboard",
+      "method": "get",
+      "path": "/api/dashboard",
+      "client": "anon",
+      "expect": [
+        401
+      ],
+      "status": 401,
+      "ms": 549,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "unauth_tasks",
+      "method": "get",
+      "path": "/api/tasks",
+      "client": "anon",
+      "expect": [
+        401
+      ],
+      "status": 401,
+      "ms": 459,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "unauth_plants",
+      "method": "get",
+      "path": "/api/plants",
+      "client": "anon",
+      "expect": [
+        401
+      ],
+      "status": 401,
+      "ms": 11,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "unauth_care_plan_generate",
+      "method": "post",
+      "path": "/api/care-plan/generate",
+      "client": "anon",
+      "expect": [
+        401
+      ],
+      "status": 401,
+      "ms": 82,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "unauth_context_current",
+      "method": "get",
+      "path": "/api/context/current",
+      "client": "anon",
+      "expect": [
+        401
+      ],
+      "status": 401,
+      "ms": 542,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "missing_param_plants_health",
+      "method": "get",
+      "path": "/api/plants/health",
+      "client": "auth",
+      "expect": [
+        400
+      ],
+      "status": 400,
+      "ms": 467,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "missing_param_diagnosis_by_plant",
+      "method": "get",
+      "path": "/api/diagnosis/by-plant",
+      "client": "auth",
+      "expect": [
+        400
+      ],
+      "status": 400,
+      "ms": 437,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "nonexistent_plant_health",
+      "method": "get",
+      "path": "/api/plants/health?plantId=nonexistent-eval-id-xyz",
+      "client": "auth",
+      "expect": [
+        200,
+        404
+      ],
+      "status": 200,
+      "ms": 11,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "nonexistent_task_toggle",
+      "method": "post",
+      "path": "/api/tasks/nonexistent-eval-id-xyz/toggle",
+      "client": "auth",
+      "expect": [
+        404
+      ],
+      "status": 404,
+      "ms": 1261,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "missing_param_weather",
+      "method": "get",
+      "path": "/api/weather",
+      "client": "auth",
+      "expect": [
+        400
+      ],
+      "status": 400,
+      "ms": 10,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "empty_location_search",
+      "method": "get",
+      "path": "/api/location/search?q=",
+      "client": "auth",
+      "expect": [
+        200,
+        400
+      ],
+      "status": 200,
+      "ms": 10,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    },
+    {
+      "name": "missing_param_plants_photo_post",
+      "method": "post",
+      "path": "/api/plants/photo",
+      "client": "auth",
+      "expect": [
+        400
+      ],
+      "status": 400,
+      "ms": 9,
+      "graceful": true,
+      "matchesExpectedStatus": true,
+      "attempt": 1
+    }
+  ],
+  "summary": {
+    "fixturesCreated": 6,
+    "fixturesAttempted": 6,
+    "carePlan": {
+      "totalRuns": 12,
+      "successfulRuns": 12,
+      "successRatePct": 100,
+      "determinismRatePct": 100,
+      "structuralCheckPassRatePct": 100,
+      "fallbackUsedRatePct": 100,
+      "latencyMsMedian": 349,
+      "latencyMsP95": 1694,
+      "checksByName": {
+        "schema_required_keys_present": {
+          "pass": 12,
+          "total": 12
+        },
+        "evidence_grounding_no_hallucinated_sources": {
+          "pass": 12,
+          "total": 12
+        },
+        "referential_integrity_action_plant_ids": {
+          "pass": 12,
+          "total": 12
+        },
+        "no_duplicate_actions": {
+          "pass": 12,
+          "total": 12
+        },
+        "weather_constraint_no_watering_push_on_heavy_rain": {
+          "pass": 12,
+          "total": 12
+        },
+        "no_overlap_between_approved_and_rejected": {
+          "pass": 12,
+          "total": 12
+        },
+        "all_7_pipeline_agents_ran": {
+          "pass": 12,
+          "total": 12
+        },
+        "empty_garden_handled_without_crash": {
+          "pass": 12,
+          "total": 12
+        }
+      }
+    },
+    "diagnosis": {
+      "totalScans": 4,
+      "schemaValidRatePct": 100,
+      "latencyMsMedian": 2847
+    },
+    "reminders": {
+      "totalRuns": 6,
+      "internallyConsistentRatePct": 100,
+      "windowClaimVerifiedRatePct": 100
+    },
+    "robustness": {
+      "totalProbes": 12,
+      "gracefulRatePct": 100,
+      "matchesExpectedRatePct": 100
+    }
+  }
+}

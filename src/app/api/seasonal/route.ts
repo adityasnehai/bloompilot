@@ -88,13 +88,18 @@ export async function POST() {
       }
     : null;
 
-  const advice = await generateSeasonalRecommendations(
-    identity.id,
-    userRow?.garden_type ?? "mixed",
-    userRow?.location ?? "",
-    plants,
-    weather,
-  );
+  let advice;
+  try {
+    advice = await generateSeasonalRecommendations(
+      identity.id,
+      userRow?.garden_type ?? "mixed",
+      userRow?.location ?? "",
+      plants,
+      weather,
+    );
+  } catch {
+    return NextResponse.json({ error: "Seasonal recommendations service unavailable" }, { status: 503 });
+  }
 
   return NextResponse.json({ advice, cached: false });
 }

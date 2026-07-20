@@ -3,6 +3,7 @@ import { appConfig } from "@/lib/app-config";
 import { getPlantCareKnowledge } from "@/lib/plant-knowledge";
 import { readWeatherSnapshot, readAirQuality } from "@/lib/weather";
 import { getGardenTypeProfile, normalizeGardenTypeValue } from "@/lib/garden-type";
+import { getStudioLayout, studioZoneAt } from "@/lib/studio-layout";
 
 type UserRow = {
   id: number;
@@ -24,6 +25,7 @@ type PlantRow = {
   sunlight: string;
   watering_interval_days: number;
   notes: string;
+  photo_blob: Uint8Array | null;
 };
 
 type PlantSource = ContextJson["plants"][number]["source"];
@@ -146,13 +148,13 @@ export type ContextJson = {
       mode: "auto" | "custom";
       custom_interval_days: number | null;
     };
-    growth_stage: "seedling" | "growing" | "flowering" | "fruiting" | "dormant";
     pot_profile: {
       size: "small" | "medium" | "large";
       material: "plastic" | "ceramic" | "terracotta" | "fabric";
       drainage_holes: boolean;
       substrate_mix: "balanced" | "high_organic" | "high_mineral";
     };
+    image_url: string | null;
     plant_knowledge: {
       source: string;
       watering_baseline: string | null;
@@ -178,6 +180,8 @@ export type ContextJson = {
       confidence: string;
     };
     missing_data: string[];
+    // User-selected planning band from Garden Studio. It is not measured exposure.
+    studio_zone: "full_sun" | "partial_shade" | "shade" | null;
   }>;
   evidence: Array<{
     type: string;
@@ -308,7 +312,7 @@ export function normalizePlacement(value: string) {
   if (key.includes("indoor")) return "indoor";
   if (key.includes("balcony")) return "balcony";
   if (key.includes("terrace") || key.includes("rooftop")) return "terrace";
-  if (key.includes("patio") || key.includes("container")) return "patio_container";
+  if (key.includes("patio") || key.includes("container")) return "balcony";
   if (key.includes("backyard") || key.includes("outdoor")) return "outdoor";
   return "outdoor";
 }
@@ -499,12 +503,12 @@ export async function buildEnvironmentContext(location: {
   }
 }
 
-export async function buildPlantContext(userId: number) {
+export async function buildPlantContext(userId: number, gardenType?: string) {
   const database = getDatabase();
   const plants = database
     .prepare(
       `
-      SELECT id, nickname, species, placement, sunlight, watering_interval_days, notes
+      SELECT id, nickname, species, placement, sunlight, watering_interval_days, notes, photo_blob
       FROM plants
       WHERE user_id = ?
       ORDER BY datetime(added_at) DESC
@@ -512,14 +516,36 @@ export async function buildPlantContext(userId: number) {
     )
     .all(userId) as PlantRow[];
 
+  // Load studio layout once and build a plantId → zone lookup map.
+  // Convert saved canvas position into a user-selected planning band.
+  const effectiveGardenType = gardenType ?? "balcony";
+  const layout = getStudioLayout(userId, effectiveGardenType);
+  const zoneMap = new Map<string, "full_sun" | "partial_shade" | "shade">();
+  if (layout) {
+    for (const lp of layout.plants) {
+      if (lp.plantId) {
+        zoneMap.set(lp.plantId, studioZoneAt(lp.z, effectiveGardenType));
+      }
+    }
+  }
+
   const contexts = await Promise.all(
     plants.map(async (plant) => {
       const noteMap = parsePlantNotes(plant.notes);
       const source = (noteMap.get("source") || "manual").toLowerCase();
+      const encodedImageUrl = noteMap.get("image_url") || "";
+      let searchedImageUrl: string | null = null;
+      if (encodedImageUrl) {
+        try {
+          searchedImageUrl = decodeURIComponent(encodedImageUrl);
+        } catch {
+          searchedImageUrl = encodedImageUrl;
+        }
+      }
       const soilRaw = noteMap.get("soil") || "";
       const wateringModeRaw = noteMap.get("watering_mode") || "auto";
       const customDaysRaw = noteMap.get("custom_days") || "";
-      const stageRaw = noteMap.get("stage") || "growing";
+
       const potSizeRaw = noteMap.get("pot_size") || "medium";
       const potMaterialRaw = noteMap.get("pot_material") || "plastic";
       const drainageRaw = noteMap.get("drainage_holes") || "yes";
@@ -547,13 +573,6 @@ export async function buildPlantContext(userId: number) {
         missingData.push("species");
       }
 
-      const stage: "seedling" | "growing" | "flowering" | "fruiting" | "dormant" =
-        stageRaw === "seedling" ||
-        stageRaw === "flowering" ||
-        stageRaw === "fruiting" ||
-        stageRaw === "dormant"
-          ? stageRaw
-          : "growing";
       const potSize: "small" | "medium" | "large" =
         potSizeRaw === "small" || potSizeRaw === "large" ? potSizeRaw : "medium";
       const potMaterial: "plastic" | "ceramic" | "terracotta" | "fabric" =
@@ -589,15 +608,20 @@ export async function buildPlantContext(userId: number) {
           custom_interval_days:
             wateringMode === "custom" && Number.isFinite(customDays) ? customDays : null,
         },
-        growth_stage: stage,
         pot_profile: {
           size: potSize,
           material: potMaterial,
           drainage_holes: drainageRaw !== "no",
           substrate_mix: substrateMix,
         },
+        image_url: plant.photo_blob
+          ? `/api/plants/photo?plantId=${encodeURIComponent(plant.id)}`
+          : searchedImageUrl
+            ? `/api/plant-image?url=${encodeURIComponent(searchedImageUrl)}`
+            : null,
         plant_knowledge: plantKnowledge,
         missing_data: missingData,
+        studio_zone: zoneMap.get(plant.id) ?? null,
       };
     }),
   );
@@ -682,6 +706,14 @@ export function buildEvidenceRefs(context: ContextJson) {
     );
   }
 
+  if (context.plants.some((plant) => plant.studio_zone !== null)) {
+    refs.push({
+      type: "user_input",
+      source: "Garden Studio saved layout",
+      supports: "user-arranged light planning band; not measured sunlight exposure",
+    });
+  }
+
   return refs;
 }
 
@@ -752,7 +784,7 @@ export async function buildGardenContext(userId: number) {
   const user = await buildUserContext(userId);
   const garden = await buildGardenSetupContext(userId);
   const environment = await buildEnvironmentContext(garden.location);
-  const plants = await buildPlantContext(userId);
+  const plants = await buildPlantContext(userId, garden.garden_type);
 
   // Gate risk flags based on garden exposure — indoor plants don't get frost/wind/rain warnings
   const profile = getGardenTypeProfile(garden.garden_type);
@@ -813,6 +845,7 @@ export function isGardenContextSnapshotStale(
   if (!Array.isArray(context.environment?.daily_forecast)) return true;
   if (!("evapotranspiration_mm" in context.environment)) return true;
   if (!("wind_speed_kph" in context.environment)) return true;
+  if (!context.plants.every((plant) => "image_url" in plant)) return true;
 
   const generatedAt = new Date(context.generated_at).getTime();
   if (!Number.isFinite(generatedAt)) return true;

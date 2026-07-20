@@ -1,4 +1,3 @@
-import { type NextRequest } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { runCarePlanAgents } from "@/lib/agent-graph";
@@ -6,16 +5,16 @@ import { runCarePlanAgents } from "@/lib/agent-graph";
 export const dynamic = "force-dynamic";
 
 const STEP_LABELS: Record<string, { title: string; detail: string }> = {
-  context:     { title: "Context Builder Agent",   detail: "Compiling profile, garden, and plant collection." },
-  environment: { title: "Environment Agent",        detail: "Loading weather, humidity, UV, and risk signals." },
-  knowledge:   { title: "Plant Knowledge Agent",    detail: "Verifying plant identity and care baselines." },
-  planner:     { title: "ReAct Care Planner",       detail: "Running LLM tool loop to generate actions." },
-  evidence:    { title: "Evidence Agent",           detail: "Validating confidence and source coverage." },
+  context:     { title: "Your garden",       detail: "Reading your profile, location, and plants." },
+  environment: { title: "Local conditions",  detail: "Checking today’s weather and garden conditions." },
+  knowledge:   { title: "Plant care",        detail: "Matching each plant with its care needs." },
+  planner:     { title: "Today’s care plan", detail: "Choosing the most useful actions for today." },
+  evidence:    { title: "Final check",       detail: "Checking that recommendations are grounded and safe." },
 };
 
 const STEP_ORDER = ["context", "environment", "knowledge", "planner", "evidence"];
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? new Response("Unauthorized", { status: 401 });
 

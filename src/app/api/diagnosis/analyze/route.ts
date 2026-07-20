@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
-import {
-  createDiagnosisRun,
-  parseDiagnosisSymptoms,
-} from "@/lib/diagnosis";
+import { createDiagnosisRun } from "@/lib/diagnosis";
 
 export async function GET() {
   const { response } = await requireApiSession();
@@ -15,7 +12,7 @@ export async function GET() {
   return NextResponse.json({
     method: "POST",
     accepts: "multipart/form-data",
-    fields: ["plantId", "photo", "symptoms[]", "observation"],
+    fields: ["plantId", "photo", "observation"],
   });
 }
 
@@ -26,7 +23,12 @@ export async function POST(request: Request) {
     return response;
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid multipart form" }, { status: 400 });
+  }
   const plantId = formData.get("plantId")?.toString() ?? "";
   const observation = formData.get("observation")?.toString().trim() ?? "";
   const photo = formData.get("photo");
@@ -38,20 +40,16 @@ export async function POST(request: Request) {
     );
   }
 
-  const additionalPhotos: File[] = [];
-  for (const [key, value] of formData.entries()) {
-    if (key.startsWith("photo") && key !== "photo" && value instanceof File && value.size > 0) {
-      additionalPhotos.push(value);
-    }
+  let run;
+  try {
+    run = await createDiagnosisRun({
+      plantId,
+      observation,
+      photo,
+    });
+  } catch {
+    return NextResponse.json({ error: "Diagnosis service unavailable" }, { status: 503 });
   }
-
-  const run = await createDiagnosisRun({
-    plantId,
-    observation,
-    photo,
-    additionalPhotos: additionalPhotos.slice(0, 2),
-    symptoms: parseDiagnosisSymptoms(formData),
-  });
 
   if (!run) {
     return NextResponse.json(

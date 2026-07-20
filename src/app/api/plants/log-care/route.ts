@@ -30,14 +30,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const body = (await request.json()) as {
-    plantId: string;
-    plantName: string;
-    eventType: string;
+  const body = await request.json().catch(() => null) as {
+    plantId?: string;
+    plantName?: string;
+    eventType?: string;
     note?: string;
-  };
+  } | null;
 
-  if (!body.plantId || !body.plantName || !body.eventType) {
+  if (!body || !body.plantId || !body.eventType) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
@@ -47,8 +47,12 @@ export async function POST(request: NextRequest) {
 
   const eventType = body.eventType as HealthEventType;
   const detail = body.note?.trim() || EVENT_DETAIL[eventType];
+  const plant = getDatabase()
+    .prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`)
+    .get(body.plantId, identity.id) as { nickname: string } | undefined;
+  if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
 
-  logHealthEvent(identity.id, body.plantId, body.plantName, eventType, detail, {
+  logHealthEvent(identity.id, body.plantId, plant.nickname, eventType, detail, {
     source: "manual",
     note: body.note ?? null,
   });

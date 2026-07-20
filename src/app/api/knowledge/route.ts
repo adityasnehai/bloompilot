@@ -7,10 +7,9 @@ export const runtime = "nodejs";
 
 // GET /api/knowledge?species=Monstera — get stored knowledge for a species
 // GET /api/knowledge?list=1 — list all known species keys
+// Public (read-only): returns cached, species-level knowledge with no user data,
+// so the public Garden Studio companion hints work without login.
 export async function GET(request: NextRequest) {
-  const { session, response } = await requireApiSession();
-  if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
   const { searchParams } = new URL(request.url);
 
   if (searchParams.get("list") === "1") {
@@ -25,7 +24,7 @@ export async function GET(request: NextRequest) {
 
   const stored = getKnowledgeFromDB(species);
   if (!stored) {
-    return NextResponse.json({ found: false, species }, { status: 404 });
+    return NextResponse.json({ found: false, species, knowledge: null });
   }
 
   return NextResponse.json({ found: true, knowledge: stored });

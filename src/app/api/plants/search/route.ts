@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireApiSession } from "@/lib/api-session";
 
 type PlantSuggestion = {
   commonName: string;
   species: string;
   imageUrl?: string;
+  observationsCount?: number;
+  family?: string;
 };
 
 type INaturalistTaxon = {
@@ -120,6 +121,8 @@ async function suggestPlantsWithINaturalist(query: string) {
           item.default_photo?.square_url?.trim() ||
           item.default_photo?.url?.trim() ||
           undefined,
+        observationsCount: item.observations_count ?? 0,
+        family: item.iconic_taxon_name ?? undefined,
       }))
       .filter((item) => item.commonName.length > 0 && item.species.length > 0)
       .slice(0, 8);
@@ -198,12 +201,9 @@ async function suggestPlantsWithGbif(query: string) {
   }
 }
 
+// Public endpoint — only queries public taxonomy APIs (iNaturalist / GBIF),
+// no user data. Open so the public Garden Studio search works without login.
 export async function GET(request: Request) {
-  const { response } = await requireApiSession({ requireOnboarded: false });
-  if (response) {
-    return response;
-  }
-
   const query = new URL(request.url).searchParams.get("q") ?? "";
   const normalized = query.trim().toLowerCase();
 

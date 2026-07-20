@@ -4,6 +4,7 @@ import { buildGardenContext } from "@/lib/context-builder";
 import { requestOpenAIChat, type ChatMessage, type ChatToolDefinition } from "@/lib/openai";
 import { sendWebPushReminder, type PushSubscriptionRecord } from "@/lib/notifications/web-push";
 import { sendEmailReminder } from "@/lib/notifications/email";
+import { deactivatePushSubscription } from "@/lib/reminders";
 
 export type AlertUrgency = "high" | "medium" | "low";
 
@@ -173,6 +174,10 @@ function persistAlerts(userId: number, rawAlerts: RawAlert[]): PlantAlert[] {
   const db = getDatabase();
   const now = new Date().toISOString();
   const todayDate = now.slice(0, 10);
+  const ownedPlants = new Map(
+    (db.prepare(`SELECT id, nickname FROM plants WHERE user_id = ?`).all(userId) as { id: string; nickname: string }[])
+      .map((plant) => [plant.id, plant.nickname]),
+  );
 
   const persisted: PlantAlert[] = [];
 
@@ -182,6 +187,8 @@ function persistAlerts(userId: number, rawAlerts: RawAlert[]): PlantAlert[] {
   );
 
   for (const raw of rawAlerts) {
+    const plantName = ownedPlants.get(raw.plant_id);
+    if (!plantName) continue;
     const dup = existsStmt.get(userId, raw.plant_id, raw.alert_type, todayDate);
     if (dup) continue;
 
@@ -189,13 +196,13 @@ function persistAlerts(userId: number, rawAlerts: RawAlert[]): PlantAlert[] {
     db.prepare(
       `INSERT INTO plant_alerts (id, user_id, plant_id, plant_name, alert_type, message, urgency, notified, triggered_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-    ).run(id, userId, raw.plant_id, raw.plant_name, raw.alert_type, raw.message, raw.urgency, now);
+    ).run(id, userId, raw.plant_id, plantName, raw.alert_type, raw.message.trim().slice(0, 240), raw.urgency, now);
 
     persisted.push({
       id,
       userId,
       plantId: raw.plant_id,
-      plantName: raw.plant_name,
+      plantName,
       alertType: raw.alert_type,
       message: raw.message,
       urgency: raw.urgency,
@@ -233,15 +240,24 @@ async function fireNotifications(
 
   // push
   if (pushSubscriptions.length > 0) {
-    const results = await Promise.allSettled(
-      pushSubscriptions.map((sub) =>
-        sendWebPushReminder({
-          subscription: sub as PushSubscriptionRecord,
+    const results = await Promise.all(
+      pushSubscriptions.map(async (subscription) => ({
+        subscription,
+        result: await sendWebPushReminder({
+          subscription: subscription as PushSubscriptionRecord,
           payload,
         }),
-      ),
+      })),
     );
-    if (results.some((r) => r.status === "fulfilled" && r.value.status === "sent")) {
+    for (const entry of results) {
+      if (entry.result.error_code === "push_subscription_expired") {
+        await deactivatePushSubscription({
+          userId,
+          endpoint: entry.subscription.endpoint,
+        });
+      }
+    }
+    if (results.some((entry) => entry.result.status === "sent")) {
       fired++;
     }
   }
@@ -309,7 +325,9 @@ export function readRecentAlerts(userId: number, limit = 20): PlantAlert[] {
   const db = getDatabase();
   const rows = db
     .prepare(
-      `SELECT * FROM plant_alerts WHERE user_id = ? ORDER BY datetime(triggered_at) DESC LIMIT ?`,
+      `SELECT * FROM plant_alerts
+       WHERE user_id = ? AND datetime(triggered_at) >= datetime('now', '-14 days')
+       ORDER BY datetime(triggered_at) DESC LIMIT ?`,
     )
     .all(userId, limit) as AlertRow[];
 

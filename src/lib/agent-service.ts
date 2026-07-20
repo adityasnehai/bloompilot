@@ -1,5 +1,5 @@
 import type { AgentRunPayload, StoredAgentRun } from "@/lib/agent-runtime";
-import { readRecentDiagnosisRuns } from "@/lib/diagnosis";
+import { readCareRelevantDiagnosisRuns } from "@/lib/diagnosis";
 import { readGardenState } from "@/lib/garden";
 import { readLatestAgentRun } from "@/lib/agent-runtime";
 import type { ReminderRunPayload, StoredReminderRun } from "@/lib/reminders";
@@ -30,7 +30,7 @@ export async function buildWorkspaceEnvelope(): Promise<WorkspaceEnvelope> {
     readGardenState(),
     readLatestAgentRun(),
     readLatestReminderRun(),
-    readRecentDiagnosisRuns(6),
+    readCareRelevantDiagnosisRuns(6),
   ]);
 
   return {
@@ -44,10 +44,11 @@ export async function buildWorkspaceEnvelope(): Promise<WorkspaceEnvelope> {
 
 export function readAgentServiceStatus(): AgentServiceStatusResponse {
   const baseUrl = getAgentServiceBaseUrl();
+  const authConfigured = Boolean(process.env.AGENT_SERVICE_API_KEY?.trim());
 
   return {
-    enabled: Boolean(baseUrl),
-    mode: baseUrl ? "external" : "local",
+    enabled: Boolean(baseUrl && authConfigured),
+    mode: baseUrl && authConfigured ? "external" : "local",
     url: baseUrl,
     endpoints: {
       health: baseUrl ? `${baseUrl}/health` : null,
@@ -69,11 +70,15 @@ async function postToService<TPayload>(
   }
 
   try {
+    const serviceKey = process.env.AGENT_SERVICE_API_KEY?.trim();
+    if (!serviceKey) return null;
     const response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Agent-Service-Key": serviceKey,
       },
+      signal: AbortSignal.timeout(15000),
       cache: "no-store",
       body: JSON.stringify(body),
     });

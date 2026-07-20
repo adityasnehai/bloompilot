@@ -6,7 +6,7 @@ import {
 } from "@/lib/garden";
 import { createDailyBrief } from "@/lib/agent-tools";
 import { getDatabase } from "@/lib/database";
-import { readRecentDiagnosisRuns } from "@/lib/diagnosis";
+import { readCareRelevantDiagnosisRuns } from "@/lib/diagnosis";
 import { requestOpenAIJson } from "@/lib/openai";
 import { appConfig } from "@/lib/app-config";
 import { readSession } from "@/lib/session";
@@ -27,7 +27,8 @@ export type AgentFocusPlant = {
   id: string;
   nickname: string;
   species: string;
-  score: number;
+  score?: number;
+  careReadiness?: number;
   openCount: number;
   overdueCount: number;
   recommendation: string;
@@ -70,7 +71,7 @@ function buildPayload() {
   return createDailyBrief().then(async ({ garden, brief, metrics }) => {
     const completed = getRecentCompletedTasks(garden.tasks).slice(0, 3);
     const session = await readSession();
-    const diagnosisHistory = await readRecentDiagnosisRuns(3);
+    const diagnosisHistory = await readCareRelevantDiagnosisRuns(3);
     const weather =
       session?.latitude !== undefined && session.longitude !== undefined
         ? await readWeatherSnapshot(session.latitude, session.longitude).catch(() => null)
@@ -151,6 +152,9 @@ You are generating a daily summary for a gardening SaaS app.
 
 User context:
 - location: ${session?.location ?? "unknown"}
+- garden type: ${session?.gardenType ?? "unknown"}
+- reminder window: ${session?.reminderWindow ?? "unknown"}
+- reminder channels: ${session?.channels?.join(", ") ?? "unknown"}
 - weather: ${weather ? weather.summary : "unavailable"}
 - plants tracked: ${metrics.plantCount}
 - open tasks: ${metrics.openTasks}

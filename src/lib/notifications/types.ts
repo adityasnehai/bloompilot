@@ -1,4 +1,4 @@
-export type ReminderChannel = "email" | "push" | "whatsapp";
+export type ReminderChannel = "email" | "push" | "telegram";
 
 export type ReminderSendPayload = {
   subject: string;

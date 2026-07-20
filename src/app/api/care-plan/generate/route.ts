@@ -48,11 +48,16 @@ export async function POST() {
     );
   }
 
-  const carePlan = await runCarePlanAgents({
-    userId: identity.id,
-    userEmail: session.email,
-    trigger: "api_generate",
-  });
+  let carePlan;
+  try {
+    carePlan = await runCarePlanAgents({
+      userId: identity.id,
+      userEmail: session.email,
+      trigger: "api_generate",
+    });
+  } catch {
+    return NextResponse.json({ error: "Care planning service unavailable" }, { status: 503 });
+  }
 
   return NextResponse.json({ care_plan: carePlan });
 }

@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import { Card } from "@/components/ui/card";
 
 type EmptyStateProps = {
   title: string;
@@ -8,8 +9,8 @@ type EmptyStateProps = {
 
 export function EmptyState({ title, body, action }: EmptyStateProps) {
   return (
-    <div className="rounded-[28px] border border-dashed border-[rgba(16,52,39,0.14)] bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0.56))] px-5 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.82)]">
-      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[rgba(76,121,97,0.1)] text-sm font-semibold text-[var(--color-moss)]">
+    <Card className="border-dashed px-5 py-8 text-center">
+      <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--color-canvas-soft)] text-sm font-semibold text-[var(--color-canopy)]">
         BP
       </div>
       <p className="mt-4 text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
@@ -22,6 +23,6 @@ export function EmptyState({ title, body, action }: EmptyStateProps) {
         {body}
       </p>
       {action ? <div className="mt-5 flex justify-center">{action}</div> : null}
-    </div>
+    </Card>
   );
 }

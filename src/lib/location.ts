@@ -24,6 +24,10 @@ type OpenMeteoResponse = {
   results?: OpenMeteoResult[];
 };
 
+type OpenMeteoTimezoneResponse = {
+  timezone?: string;
+};
+
 type NominatimResponse = {
   display_name?: string;
   address?: {
@@ -71,6 +75,7 @@ export async function searchLocations(query: string) {
 
   const response = await fetch(url, {
     cache: "no-store",
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!response.ok) {
@@ -79,6 +84,25 @@ export async function searchLocations(query: string) {
 
   const payload = (await response.json()) as OpenMeteoResponse;
   return (payload.results ?? []).map(mapOpenMeteoResult);
+}
+
+async function readTimezoneAtCoordinates(latitude: number, longitude: number) {
+  const url = new URL("https://api.open-meteo.com/v1/forecast");
+  url.searchParams.set("latitude", latitude.toString());
+  url.searchParams.set("longitude", longitude.toString());
+  url.searchParams.set("current", "temperature_2m");
+  url.searchParams.set("timezone", "auto");
+  url.searchParams.set("forecast_days", "1");
+
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
+  if (!response.ok) {
+    return undefined;
+  }
+
+  const payload = (await response.json()) as OpenMeteoTimezoneResponse;
+  return typeof payload.timezone === "string" && payload.timezone.trim()
+    ? payload.timezone.trim()
+    : undefined;
 }
 
 export async function reverseGeocodeLocation(latitude: number, longitude: number) {
@@ -92,6 +116,7 @@ export async function reverseGeocodeLocation(latitude: number, longitude: number
 
   const response = await fetch(url, {
     cache: "no-store",
+    signal: AbortSignal.timeout(10000),
     headers: {
       "User-Agent": `${appConfig.name}/1.0 (${appConfig.supportEmail})`,
       Referer: appConfig.siteUrl,
@@ -110,6 +135,8 @@ export async function reverseGeocodeLocation(latitude: number, longitude: number
     payload.address?.municipality ??
     payload.address?.county;
 
+  const timezone = await readTimezoneAtCoordinates(latitude, longitude);
+
   return {
     label:
       buildLabel([
@@ -119,6 +146,7 @@ export async function reverseGeocodeLocation(latitude: number, longitude: number
       ]) || payload.display_name || "Current location",
     latitude,
     longitude,
+    timezone,
     country: payload.address?.country,
     countryCode: payload.address?.country_code?.toLowerCase(),
   } satisfies LocationSuggestion;

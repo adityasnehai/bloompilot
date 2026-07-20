@@ -95,7 +95,7 @@ Plant:
 Return JSON only with this exact shape:
 {
   "nickname": string,
-  "placement": "Indoor collection" | "Balcony garden" | "Backyard garden" | "Terrace or rooftop garden" | "Patio or container garden",
+  "placement": "Indoor collection" | "Balcony garden" | "Backyard garden" | "Terrace garden",
   "sunlight": "Low light" | "Bright indirect" | "Partial sun" | "Full sun",
   "wateringIntervalDays": integer,
   "notes": string

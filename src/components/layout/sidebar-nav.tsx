@@ -10,6 +10,11 @@ const items = [
     description: "Plants, care, diagnosis",
   },
   {
+    href: "/garden-studio",
+    label: "Placement Studio",
+    description: "3D layout planner",
+  },
+  {
     href: "/chat",
     label: "Chat",
     description: "Ask your garden anything",
@@ -45,8 +50,8 @@ export function SidebarNav() {
             href={item.href}
             className={`rounded-xl border px-4 py-3 transition ${
               active
-                ? "border-[rgba(16,52,39,0.12)] bg-[rgba(243,241,234,0.95)] text-[var(--color-ink)]"
-                : "border-transparent bg-transparent text-[var(--color-ink)] hover:border-[rgba(16,52,39,0.08)] hover:bg-[rgba(243,241,234,0.7)]"
+                ? "border-transparent bg-[var(--color-canvas-soft)] text-[var(--color-ink)]"
+                : "border-transparent bg-transparent text-[var(--color-muted)] hover:bg-[var(--color-canvas-sage)] hover:text-[var(--color-ink)]"
             }`}
           >
             <span className="block min-w-0">

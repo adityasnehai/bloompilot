@@ -108,7 +108,7 @@ export default async function PlantDetailPage({
       <section className="surface-panel px-5 py-6 sm:px-6">
         <div className="flex flex-wrap items-start gap-4">
           {hasPhoto ? (
-            <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border border-[rgba(16,52,39,0.08)] bg-[rgba(245,237,222,0.72)]">
+            <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-2xl border border-[var(--color-line)] bg-white/5">
               <Image
                 src={`/api/plants/photo?plantId=${plantId}`}
                 alt={plant.nickname}
@@ -119,7 +119,7 @@ export default async function PlantDetailPage({
               />
             </div>
           ) : (
-            <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[rgba(16,52,39,0.08)] bg-[rgba(245,237,222,0.72)]">
+            <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--color-line)] bg-white/5">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 text-[var(--color-muted)]">
                 <path d="M12 22s-8-4.5-8-11.8A8 8 0 0 1 12 2a8 8 0 0 1 8 8.2c0 7.3-8 11.8-8 11.8z" />
                 <path d="M12 22V12" />
@@ -133,11 +133,11 @@ export default async function PlantDetailPage({
             <h2 className="mt-1 text-2xl font-semibold text-[var(--color-ink)]">{plant.nickname}</h2>
             <p className="text-sm text-[var(--color-muted)]">{plant.species}</p>
             <div className="mt-2 flex flex-wrap gap-2 text-xs text-[var(--color-muted)]">
-              <span className="rounded-full border border-[rgba(16,52,39,0.08)] bg-white px-2.5 py-0.5">{plant.placement}</span>
-              <span className="rounded-full border border-[rgba(16,52,39,0.08)] bg-white px-2.5 py-0.5">{plant.sunlight}</span>
-              <span className="rounded-full border border-[rgba(16,52,39,0.08)] bg-white px-2.5 py-0.5">Water every {plant.watering_interval_days}d</span>
+              <span className="rounded-full border border-[var(--color-line)] bg-white/5 px-2.5 py-0.5">{plant.placement}</span>
+              <span className="rounded-full border border-[var(--color-line)] bg-white/5 px-2.5 py-0.5">{plant.sunlight}</span>
+              <span className="rounded-full border border-[var(--color-line)] bg-white/5 px-2.5 py-0.5">Water every {plant.watering_interval_days}d</span>
               {plant.last_watered_at && (
-                <span className="rounded-full border border-[rgba(16,52,39,0.08)] bg-white px-2.5 py-0.5">Last watered {formatDateTime(plant.last_watered_at)}</span>
+                <span className="rounded-full border border-[var(--color-line)] bg-white/5 px-2.5 py-0.5">Last watered {formatDateTime(plant.last_watered_at)}</span>
               )}
             </div>
           </div>
@@ -149,7 +149,7 @@ export default async function PlantDetailPage({
           {/* Knowledge panel */}
           {knowledge && (
             <section className="surface-panel px-5 py-6 sm:px-6">
-              <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Care knowledge</p>
+              <p className="eyebrow">Care knowledge</p>
               <h3 className="mt-1 text-lg font-semibold text-[var(--color-ink)]">Species profile</h3>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {knowledge.wateringBaseline && (
@@ -181,25 +181,25 @@ export default async function PlantDetailPage({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {knowledge.toxicity && (
                     <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Toxicity</p>
-                      <p className="mt-1 text-sm text-[var(--color-copper)]">{knowledge.toxicity}</p>
+                      <p className="eyebrow">Toxicity</p>
+                      <p className="mt-1 text-sm text-[var(--color-ink)]">{knowledge.toxicity}</p>
                     </div>
                   )}
                   {knowledge.pestList.length > 0 && (
                     <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Common pests</p>
+                      <p className="eyebrow">Common pests</p>
                       <p className="mt-1 text-sm text-[var(--color-ink)]">{knowledge.pestList.slice(0, 4).join(", ")}</p>
                     </div>
                   )}
                   {knowledge.diseaseList.length > 0 && (
                     <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Disease watch</p>
+                      <p className="eyebrow">Disease watch</p>
                       <p className="mt-1 text-sm text-[var(--color-ink)]">{knowledge.diseaseList.slice(0, 4).join(", ")}</p>
                     </div>
                   )}
                   {knowledge.companionPlants.length > 0 && (
                     <div className="surface-card-muted p-3">
-                      <p className="text-xs uppercase tracking-[0.14em] text-[var(--color-muted)]">Companion plants</p>
+                      <p className="eyebrow">Companion plants</p>
                       <p className="mt-1 text-sm text-[var(--color-ink)]">{knowledge.companionPlants.slice(0, 4).join(", ")}</p>
                     </div>
                   )}
@@ -213,7 +213,7 @@ export default async function PlantDetailPage({
 
           {/* Diagnosis history */}
           <section className="surface-panel px-5 py-6 sm:px-6">
-            <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Health history</p>
+            <p className="eyebrow">Health history</p>
             <h3 className="mt-1 text-lg font-semibold text-[var(--color-ink)]">Diagnoses</h3>
             {diagnoses.length === 0 ? (
               <p className="mt-4 text-sm text-[var(--color-muted)]">No diagnoses yet. Run a health check from the <Link href="/diagnosis" className="underline">Diagnosis</Link> page.</p>
@@ -237,7 +237,7 @@ export default async function PlantDetailPage({
                       </div>
                     )}
                     <div className="mt-3 flex items-center gap-2">
-                      <span className="rounded-full border border-[rgba(16,52,39,0.08)] bg-white px-2.5 py-0.5 text-xs text-[var(--color-muted)]">
+                      <span className="rounded-full border border-[var(--color-line)] bg-white/5 px-2.5 py-0.5 text-xs text-[var(--color-muted)]">
                         Confidence {d.confidence}%
                       </span>
                     </div>
@@ -249,7 +249,7 @@ export default async function PlantDetailPage({
 
           {/* Health event timeline */}
           <section className="surface-panel px-5 py-6 sm:px-6">
-            <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Activity</p>
+            <p className="eyebrow">Activity</p>
             <h3 className="mt-1 text-lg font-semibold text-[var(--color-ink)]">Care timeline</h3>
             {healthEvents.length === 0 ? (
               <p className="mt-4 text-sm text-[var(--color-muted)]">No recorded events yet.</p>

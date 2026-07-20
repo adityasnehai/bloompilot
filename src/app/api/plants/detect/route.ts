@@ -1,21 +1,28 @@
 import { NextResponse } from "next/server";
-import { requireApiSession } from "@/lib/api-session";
 import { identifyPlantPhotoCandidates } from "@/lib/plantnet";
 
+// Public endpoint — only calls the external PlantNet vision API, no user data.
+// Open so the public Garden Studio photo-identify works without login.
 export async function POST(request: Request) {
-  const { response } = await requireApiSession({ requireOnboarded: false });
-
-  if (response) {
-    return response;
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid multipart form" }, { status: 400 });
   }
-
-  const formData = await request.formData();
   const photo = formData.get("photo");
 
-  if (!(photo instanceof File) || photo.size === 0) {
+  if (!(photo instanceof File) || photo.size === 0 || !photo.type.startsWith("image/")) {
     return NextResponse.json({ error: "Missing photo" }, { status: 400 });
   }
+  if (photo.size > 4 * 1024 * 1024) {
+    return NextResponse.json({ error: "Photo must be 4 MB or smaller" }, { status: 413 });
+  }
 
-  const candidates = await identifyPlantPhotoCandidates(photo);
-  return NextResponse.json({ candidates });
+  try {
+    const candidates = await identifyPlantPhotoCandidates(photo);
+    return NextResponse.json({ candidates });
+  } catch {
+    return NextResponse.json({ error: "Plant identification service unavailable" }, { status: 502 });
+  }
 }

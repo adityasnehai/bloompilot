@@ -3,7 +3,7 @@ import { searchLocations } from "@/lib/location";
 import { requireApiSession } from "@/lib/api-session";
 
 export async function GET(request: Request) {
-  const { session, response } = await requireApiSession();
+  const { session, response } = await requireApiSession({ requireOnboarded: false });
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);

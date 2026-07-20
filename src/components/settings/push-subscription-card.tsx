@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type SubscriptionState = "unsupported" | "idle" | "subscribed" | "error";
 
@@ -15,6 +17,32 @@ function urlBase64ToUint8Array(base64String: string) {
   }
 
   return outputArray;
+}
+
+async function savePushSubscription(subscription: PushSubscription) {
+  const json = subscription.toJSON();
+  if (!json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error("Push subscription keys are missing. Retry in a fresh tab.");
+  }
+
+  const response = await fetch("/api/notifications/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      endpoint: subscription.endpoint,
+      keys: {
+        p256dh: json.keys.p256dh,
+        auth: json.keys.auth,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    throw new Error(payload?.error || "Failed to save push subscription.");
+  }
 }
 
 export function PushSubscriptionCard() {
@@ -35,10 +63,13 @@ export function PushSubscriptionCard() {
 
     let active = true;
     void (async () => {
-      const registration = await navigator.serviceWorker.register("/push-sw.js");
+      await navigator.serviceWorker.register("/push-sw.js");
+      const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       if (!active) return;
       if (existing) {
+        await savePushSubscription(existing);
+        if (!active) return;
         setState("subscribed");
         setMessage("Push notifications are active for this browser.");
       } else {
@@ -83,7 +114,8 @@ export function PushSubscriptionCard() {
         );
       }
 
-      const registration = await navigator.serviceWorker.register("/push-sw.js");
+      await navigator.serviceWorker.register("/push-sw.js");
+      const registration = await navigator.serviceWorker.ready;
       const existing = await registration.pushManager.getSubscription();
       const subscription =
         existing ??
@@ -92,28 +124,7 @@ export function PushSubscriptionCard() {
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
         }));
 
-      const json = subscription.toJSON();
-      if (!json.keys?.p256dh || !json.keys?.auth) {
-        throw new Error("Push subscription keys are missing. Retry in a fresh tab.");
-      }
-      const response = await fetch("/api/notifications/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          endpoint: subscription.endpoint,
-          keys: {
-            p256dh: json.keys.p256dh,
-            auth: json.keys.auth,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(payload?.error || "Failed to save push subscription.");
-      }
+      await savePushSubscription(subscription);
 
       setState("subscribed");
       setMessage("Push notifications are enabled.");
@@ -132,7 +143,8 @@ export function PushSubscriptionCard() {
     setBusy(true);
     setMessage("");
     try {
-      const registration = await navigator.serviceWorker.register("/push-sw.js");
+      await navigator.serviceWorker.register("/push-sw.js");
+      const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (!subscription) {
         setState("idle");
@@ -160,30 +172,34 @@ export function PushSubscriptionCard() {
   }
 
   return (
-    <div className="surface-card px-4 py-4">
+    <Card className="px-4 py-4">
       <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Web push</p>
       <p className="mt-2 text-sm leading-6 text-[var(--color-ink)]">
-        Enable browser notifications for urgent care actions.
+        Enable browser notifications for urgent care actions on this device.
+      </p>
+      <p className="mt-2 text-xs leading-5 text-[var(--color-muted)]">
+        Status: {state === "subscribed" ? "ready" : state === "unsupported" ? "unsupported" : state === "error" ? "needs attention" : "not enabled"}
       </p>
       <p className="mt-2 text-sm text-[var(--color-muted)]">{message}</p>
       <div className="mt-4 flex gap-2">
-        <button
+        <Button
           type="button"
           onClick={enablePush}
           disabled={busy || state === "unsupported"}
-          className="button-primary"
+          className="rounded-full"
         >
           Enable push
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           onClick={disablePush}
           disabled={busy || state === "unsupported"}
-          className="button-ghost"
+          variant="outline"
+          className="rounded-full"
         >
           Disable push
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

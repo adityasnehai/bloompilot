@@ -1,19 +1,60 @@
-import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 let databaseInstance: DatabaseSync | null = null;
+const LOCAL_DEV_DATABASE_PATH = "/tmp/bloompilot.sqlite";
+const LEGACY_PROJECT_DATABASE_PATH = resolve(process.cwd(), "./data/bloompilot.sqlite");
+
+function resolveConfiguredDatabasePath() {
+  const configuredPath = process.env.DATABASE_FILE_PATH?.trim();
+  if (!configuredPath) {
+    return null;
+  }
+
+  return isAbsolute(configuredPath)
+    ? configuredPath
+    : resolve(process.cwd(), configuredPath);
+}
+
+function shouldRedirectProjectDatabasePath(databasePath: string) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  if (process.env.DATABASE_DEV_ALLOW_PROJECT_PATH === "true") {
+    return false;
+  }
+
+  return databasePath.startsWith(`${process.cwd()}${sep}`);
+}
 
 function getDatabasePath() {
-  if (process.env.DATABASE_FILE_PATH) {
-    return resolve(process.cwd(), process.env.DATABASE_FILE_PATH);
+  const configuredPath = resolveConfiguredDatabasePath();
+  if (configuredPath) {
+    return shouldRedirectProjectDatabasePath(configuredPath)
+      ? LOCAL_DEV_DATABASE_PATH
+      : configuredPath;
   }
 
   if (process.env.VERCEL) {
-    return "/tmp/bloompilot.sqlite";
+    return LOCAL_DEV_DATABASE_PATH;
   }
 
-  return resolve(process.cwd(), "./data/bloompilot.sqlite");
+  return LOCAL_DEV_DATABASE_PATH;
+}
+
+function migrateLegacyProjectDatabase(targetPath: string) {
+  if (targetPath === LEGACY_PROJECT_DATABASE_PATH) {
+    return;
+  }
+
+  if (!existsSync(LEGACY_PROJECT_DATABASE_PATH) || existsSync(targetPath)) {
+    return;
+  }
+
+  mkdirSync(dirname(targetPath), { recursive: true });
+  copyFileSync(LEGACY_PROJECT_DATABASE_PATH, targetPath);
 }
 
 function initializeSchema(database: DatabaseSync) {
@@ -36,6 +77,19 @@ function initializeSchema(database: DatabaseSync) {
       joined_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id);
+    CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_expires_at ON password_reset_tokens(expires_at);
 
     CREATE TABLE IF NOT EXISTS plants (
       id TEXT PRIMARY KEY,
@@ -145,6 +199,9 @@ function initializeSchema(database: DatabaseSync) {
       summary TEXT NOT NULL,
       treatment_json TEXT NOT NULL,
       follow_up TEXT NOT NULL,
+      diagnosis_provider TEXT NOT NULL DEFAULT 'local_rule',
+      diagnosis_evidence_status TEXT NOT NULL DEFAULT 'needs_more_evidence',
+      diagnosis_evidence_notes_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -292,6 +349,15 @@ function initializeSchema(database: DatabaseSync) {
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_seasonal_recs_user_season ON seasonal_recommendations(user_id, season, year);
 
+    CREATE TABLE IF NOT EXISTS studio_layouts (
+      user_id   INTEGER NOT NULL,
+      garden_type TEXT NOT NULL,
+      layout_json TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      PRIMARY KEY (user_id, garden_type),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS plant_milestones (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
@@ -343,10 +409,32 @@ function initializeSchema(database: DatabaseSync) {
   ensureColumn(database, "users", "email_daily_reminder", "INTEGER DEFAULT 1");
   ensureColumn(database, "users", "email_weekly_digest", "INTEGER DEFAULT 1");
   ensureColumn(database, "users", "whatsapp_number", "TEXT");
+  ensureColumn(database, "users", "telegram_chat_id", "TEXT");
   ensureColumn(database, "users", "timezone", "TEXT");
   ensureColumn(database, "users", "country_code", "TEXT");
+  ensureColumn(database, "users", "password_hash", "TEXT");
+  ensureColumn(database, "users", "reminder_engagement_score", "REAL DEFAULT 100");
   ensureColumn(database, "plants", "photo_blob", "BLOB");
   ensureColumn(database, "plants", "photo_type", "TEXT");
+  ensureColumn(database, "diagnosis_runs", "diagnosis_provider", "TEXT NOT NULL DEFAULT 'local_rule'");
+  ensureColumn(
+    database,
+    "diagnosis_runs",
+    "diagnosis_evidence_status",
+    "TEXT NOT NULL DEFAULT 'needs_more_evidence'",
+  );
+  ensureColumn(
+    database,
+    "diagnosis_runs",
+    "diagnosis_evidence_notes_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  );
+  ensureColumn(
+    database,
+    "diagnosis_runs",
+    "diagnosis_findings_json",
+    "TEXT NOT NULL DEFAULT '[]'",
+  );
 
   // Seed common plant knowledge so day-1 users don't need API calls
   seedKnowledgeBaseOnce(database);
@@ -390,6 +478,7 @@ export function getDatabase() {
   }
 
   const databasePath = getDatabasePath();
+  migrateLegacyProjectDatabase(databasePath);
   mkdirSync(dirname(databasePath), { recursive: true });
   databaseInstance = new DatabaseSync(databasePath);
   initializeSchema(databaseInstance);

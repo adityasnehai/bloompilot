@@ -19,7 +19,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  const body = (await request.json()) as UnsubscribeBody;
+  const body = await request.json().catch(() => null) as UnsubscribeBody | null;
+  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   const endpoint = body.endpoint?.trim();
   if (!endpoint) {
     return NextResponse.json({ error: "endpoint is required" }, { status: 400 });

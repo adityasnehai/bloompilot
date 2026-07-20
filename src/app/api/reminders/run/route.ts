@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { requestExternalReminderSweep } from "@/lib/agent-service";
 import {
-  readOrCreateLatestReminderRun,
+  readLatestReminderRun,
   runReminderSweep,
 } from "@/lib/reminders";
+import { requireApiSession } from "@/lib/api-session";
 
 export async function GET(request: Request) {
+  const { response } = await requireApiSession();
+  if (response) return response;
+
   const { searchParams } = new URL(request.url);
   const refresh = searchParams.get("refresh") === "1";
   const source = searchParams.get("source");
@@ -20,7 +24,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const run = refresh ? await runReminderSweep("api") : await readOrCreateLatestReminderRun();
+  const run = refresh ? await runReminderSweep("api") : await readLatestReminderRun();
 
   if (!run) {
     return NextResponse.json(

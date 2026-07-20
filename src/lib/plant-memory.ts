@@ -114,7 +114,14 @@ export function getPlantHealthSummary(
   const skipCount = events.filter((e) => e.eventType === "water_skipped").length;
 
   const lastWatered = events.find((e) => e.eventType === "watered");
-  const lastDiagnosed = events.find((e) => e.eventType === "diagnosed");
+  const lastDiagnosed = events.find(
+    (e) =>
+      e.eventType === "diagnosed" &&
+      e.metadata.evidenceStatus === "confirmed" &&
+      typeof e.metadata.issue === "string" &&
+      e.metadata.issue !== "Provider unavailable" &&
+      e.metadata.issue !== "Needs more evidence",
+  );
 
   // count consecutive skips from most recent event backwards
   let consecutiveSkips = 0;

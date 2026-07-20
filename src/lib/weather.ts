@@ -152,7 +152,7 @@ export async function readWeatherSnapshot(latitude: number, longitude: number): 
   url.searchParams.set("forecast_days", "7");
   url.searchParams.set("timezone", "auto");
 
-  const response = await fetch(url, { cache: "no-store" });
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`Weather lookup failed with ${response.status}`);
 
   const payload = (await response.json()) as ForecastResponse;
@@ -239,7 +239,7 @@ export async function readAirQuality(latitude: number, longitude: number): Promi
     url.searchParams.set("longitude", longitude.toString());
     url.searchParams.set("current", ["pm2_5", "pm10", "ozone", "nitrogen_dioxide", "european_aqi"].join(","));
 
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10000) });
     if (!response.ok) return null;
 
     const payload = (await response.json()) as AirQualityResponse;

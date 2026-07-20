@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { EmptyState } from "@/components/garden/empty-state";
 import { TasksView } from "@/components/tasks/tasks-view";
+import { Button } from "@/components/ui/button";
 import {
   getDueTodayTasks,
   getOverdueTasks,
@@ -23,7 +24,7 @@ export default async function TasksPage() {
   const plantMap = getTaskPlantMap(gardenState.plants);
   const overdueTasks = getOverdueTasks(gardenState.tasks);
   const dueTodayTasks = getDueTodayTasks(gardenState.tasks);
-  const upcomingTasks = getUpcomingTasks(gardenState.tasks).slice(0, 12);
+  const upcomingTasks = getUpcomingTasks(gardenState.tasks);
   const completedTasks = getRecentCompletedTasks(gardenState.tasks);
 
   if (gardenState.plants.length === 0) {
@@ -33,9 +34,9 @@ export default async function TasksPage() {
           title="No care queue yet because no plants are loaded."
           body="Add your plants first. BloomPilot creates recurring watering, inspection, and feed tasks automatically."
           action={
-            <Link href="/garden" className="button-primary">
-              Add plants
-            </Link>
+            <Button asChild>
+              <Link href="/garden">Add plants</Link>
+            </Button>
           }
         />
       </div>

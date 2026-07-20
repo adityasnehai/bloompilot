@@ -3,14 +3,15 @@ import { reverseGeocodeLocation } from "@/lib/location";
 import { requireApiSession } from "@/lib/api-session";
 
 export async function GET(request: Request) {
-  const { session, response } = await requireApiSession();
+  // requireOnboarded:false — called during onboarding before profile is complete
+  const { session, response } = await requireApiSession({ requireOnboarded: false });
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const latitude = Number.parseFloat(searchParams.get("latitude") ?? "");
   const longitude = Number.parseFloat(searchParams.get("longitude") ?? "");
 
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     return NextResponse.json({ error: "Latitude and longitude are required" }, { status: 400 });
   }
 

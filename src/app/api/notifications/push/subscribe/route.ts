@@ -23,7 +23,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  const body = (await request.json()) as SubscribeBody;
+  const body = await request.json().catch(() => null) as SubscribeBody | null;
+  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   const endpoint = body.endpoint?.trim();
   const p256dh = body.keys?.p256dh?.trim();
   const auth = body.keys?.auth?.trim();

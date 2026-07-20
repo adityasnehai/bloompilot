@@ -6,14 +6,14 @@ export type PlantPlacement =
   | "Indoor collection"
   | "Balcony garden"
   | "Backyard garden"
-  | "Terrace or rooftop garden"
+  | "Terrace garden"
   | "Patio or container garden"
   | "Indoor"
   | "Balcony"
   | "Patio"
   | "Backyard"
   | "Terrace"
-  | "Container Garden";
+;
 export type SunlightLevel = "Low light" | "Bright indirect" | "Partial sun" | "Full sun";
 export type TaskKind = "water" | "inspect" | "feed";
 export type TaskStatus = "open" | "done";
@@ -29,6 +29,7 @@ export type Plant = {
   id: string;
   nickname: string;
   species: string;
+  imageUrl?: string;
   placement: PlantPlacement;
   sunlight: SunlightLevel;
   wateringIntervalDays: number;
@@ -81,12 +82,11 @@ export const placementOptions: PlantPlacement[] = [
   "Balcony",
   "Backyard",
   "Terrace",
-  "Container Garden",
   // legacy values kept for backward compat with existing DB rows
   "Indoor collection",
   "Balcony garden",
   "Backyard garden",
-  "Terrace or rooftop garden",
+  "Terrace garden",
   "Patio or container garden",
 ];
 
@@ -96,8 +96,8 @@ export function normalizePlacement(value?: string | null): PlantPlacement {
   if (v === "indoor" || v === "indoor collection") return "Indoor";
   if (v === "balcony" || v === "balcony garden") return "Balcony";
   if (v === "backyard" || v === "backyard garden") return "Backyard";
-  if (v === "terrace" || v === "terrace or rooftop garden" || v === "rooftop") return "Terrace";
-  if (v === "container garden" || v === "patio or container garden" || v === "patio") return "Container Garden";
+  if (v === "terrace" || v === "terrace garden" || v === "terrace or rooftop garden" || v === "rooftop") return "Terrace";
+  if (v === "container garden" || v === "patio or container garden" || v === "patio") return "Balcony";
   return "Indoor";
 }
 
@@ -139,6 +139,7 @@ type PlantRow = {
   id: string;
   nickname: string;
   species: string;
+  photo_blob: Uint8Array | null;
   placement: PlantPlacement;
   sunlight: SunlightLevel;
   watering_interval_days: number;
@@ -220,7 +221,7 @@ export async function readGardenState() {
     .prepare(
       `
         SELECT id, nickname, species, placement, sunlight,
-               watering_interval_days, notes, added_at, last_watered_at
+               watering_interval_days, notes, added_at, last_watered_at, photo_blob
         FROM plants
         WHERE user_id = ?
         ORDER BY datetime(added_at) DESC
@@ -253,6 +254,7 @@ export async function readGardenState() {
       id: plant.id,
       nickname: plant.nickname,
       species: plant.species,
+      imageUrl: plant.photo_blob ? `/api/plants/photo?plantId=${encodeURIComponent(plant.id)}` : undefined,
       placement: plant.placement,
       sunlight: plant.sunlight,
       wateringIntervalDays: plant.watering_interval_days,
@@ -483,9 +485,10 @@ export function updatePlantInGarden(
       plants: state.plants.map((entry) =>
         entry.id === plantId ? updatedPlant : entry,
       ),
-      tasks: state.tasks.filter((task) => task.plantId !== plantId).concat(
-        createInitialTasksForPlant(updatedPlant),
-      ),
+      // Keep completed care history while rebuilding only the open schedule.
+      tasks: state.tasks
+        .filter((task) => task.plantId !== plantId || task.status === "done")
+        .concat(createInitialTasksForPlant(updatedPlant)),
       activities: [
         createActivity(
           "plant_updated",
@@ -726,16 +729,22 @@ export function getOverdueTasks(tasks: CareTask[]) {
     });
 }
 
-export function getUpcomingTasks(tasks: CareTask[]) {
+export function getUpcomingTasks(tasks: CareTask[], withinDays?: number) {
   const startOfTomorrow = new Date();
   startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
   startOfTomorrow.setHours(0, 0, 0, 0);
+  const endOfWindow = withinDays === undefined ? null : new Date(startOfTomorrow);
+  if (endOfWindow) {
+    endOfWindow.setDate(endOfWindow.getDate() + (withinDays ?? 0));
+    endOfWindow.setMilliseconds(-1);
+  }
 
   return tasks
     .filter(
       (task) =>
         task.status === "open" &&
-        new Date(task.dueDate).getTime() >= startOfTomorrow.getTime(),
+        new Date(task.dueDate).getTime() >= startOfTomorrow.getTime() &&
+        (endOfWindow === null || new Date(task.dueDate).getTime() <= endOfWindow.getTime()),
     )
     .sort((left, right) => {
       return new Date(left.dueDate).getTime() - new Date(right.dueDate).getTime();

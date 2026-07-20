@@ -11,59 +11,58 @@ type SeasonalAdvice = {
   generatedAt: string;
 };
 
-const SEASON_EMOJI: Record<string, string> = {
-  spring: "🌸",
-  summer: "☀️",
-  fall: "🍂",
-  winter: "❄️",
-};
-
 export function SeasonalCard() {
   const [advice, setAdvice] = useState<SeasonalAdvice | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/seasonal")
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setAdvice(d.advice))
+      .catch(() => setError("Seasonal advice is unavailable right now."))
       .finally(() => setLoading(false));
   }, []);
 
   async function generate() {
     setGenerating(true);
+    setError(null);
     try {
       const res = await fetch("/api/seasonal", { method: "POST" });
+      if (!res.ok) throw new Error("Seasonal advice unavailable");
       const d = await res.json();
       setAdvice(d.advice);
+    } catch {
+      setError("Could not generate seasonal advice. Try again later.");
     } finally {
       setGenerating(false);
     }
   }
 
-  const emoji = advice ? (SEASON_EMOJI[advice.season] ?? "🌿") : "🌿";
-
   return (
-    <div className="rounded-2xl border border-[var(--color-line)] bg-white p-5 shadow-[0_2px_8px_rgba(20,52,39,0.06)]">
-      <div className="flex items-center justify-between gap-3 mb-4">
+    <div className="rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-[0_6px_20px_rgba(24,36,27,0.04)]">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--color-muted)]">Seasonal tips</p>
+          <p className="eyebrow">Seasonal care</p>
           {advice && (
-            <p className="text-base font-semibold text-[var(--color-ink)] mt-0.5">
-              {emoji} {advice.season.charAt(0).toUpperCase() + advice.season.slice(1)} {advice.year}
+            <p className="mt-1 text-lg font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
+              {advice.season.charAt(0).toUpperCase() + advice.season.slice(1)} {advice.year}
             </p>
           )}
         </div>
         <button
           onClick={generate}
           disabled={generating}
-          className="shrink-0 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] hover:bg-[rgba(20,52,39,0.06)] disabled:opacity-50 transition"
+          className="shrink-0 rounded-lg border border-[var(--color-line)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] transition hover:bg-[var(--color-canvas-soft)] disabled:opacity-50"
         >
           {generating ? "Generating…" : advice ? "Refresh" : "Generate"}
         </button>
       </div>
 
       {loading && <p className="text-sm text-[var(--color-muted)]">Loading…</p>}
+
+      {error && <p role="alert" className="text-sm text-[var(--color-muted)]">{error}</p>}
 
       {!loading && !advice && (
         <p className="text-sm text-[var(--color-muted)]">
@@ -74,15 +73,15 @@ export function SeasonalCard() {
       {advice && (
         <div className="grid gap-3">
           {advice.warning && (
-            <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-medium text-orange-700">
-              ⚠️ {advice.warning}
+            <div className="rounded-lg border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-3 py-2 text-xs font-medium text-[var(--color-ink)]">
+              {advice.warning}
             </div>
           )}
 
           {advice.focusAreas.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {advice.focusAreas.map((area) => (
-                <span key={area} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+                <span key={area} className="rounded-full border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-2.5 py-1 text-xs font-medium text-[var(--color-ink)]">
                   {area}
                 </span>
               ))}
@@ -92,15 +91,12 @@ export function SeasonalCard() {
           <ul className="grid gap-1.5">
             {advice.tips.map((tip, i) => (
               <li key={i} className="flex gap-2 text-sm text-[var(--color-ink)]">
-                <span className="mt-0.5 shrink-0 text-[var(--color-canopy)]">•</span>
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-canopy)]" />
                 <span>{tip}</span>
               </li>
             ))}
           </ul>
 
-          <p className="text-[10px] text-[var(--color-muted)]">
-            Generated {new Date(advice.generatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-          </p>
         </div>
       )}
     </div>

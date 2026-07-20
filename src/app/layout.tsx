@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
+import "@mantine/core/styles.css";
 import "./globals.css";
 import { appConfig } from "@/lib/app-config";
+import { MantineAppProvider } from "@/components/providers/mantine-app-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   metadataBase: new URL(appConfig.siteUrl),
@@ -46,8 +49,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full scroll-smooth antialiased">
-      <body className="min-h-full text-[var(--color-ink)]">{children}</body>
+    <html lang="en" data-scroll-behavior="smooth" className="h-full scroll-smooth antialiased">
+      <body className="min-h-full text-[var(--color-ink)]">
+        <MantineAppProvider>
+          {children}
+          <Toaster />
+        </MantineAppProvider>
+      </body>
     </html>
   );
 }

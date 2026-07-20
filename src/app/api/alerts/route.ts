@@ -25,6 +25,10 @@ export async function POST() {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const result = await runAlertObserver(identity.id, session.email);
-  return NextResponse.json(result);
+  try {
+    const result = await runAlertObserver(identity.id, session.email);
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json({ error: "Alert service unavailable" }, { status: 503 });
+  }
 }

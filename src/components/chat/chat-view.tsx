@@ -125,22 +125,15 @@ export function ChatView() {
   return (
     <div className="flex h-[calc(100vh-88px)] flex-col">
       {/* Header */}
-      <div
-        className="shrink-0 rounded-t-2xl border border-[rgba(255,255,255,0.08)] px-5 py-4 shadow-[0_4px_16px_rgba(20,52,39,0.15)]"
-        style={{ background: "linear-gradient(135deg,#0c2518 0%,#143427 40%,#1a5238 70%,#2d7a52 100%)" }}
-      >
+      <div className="shrink-0 border-b border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3 sm:px-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/15 text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-[var(--color-ink)]">
             <LeafIcon />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">BloomPilot Assistant</p>
-            <p className="text-xs text-white/60">Ask anything about your garden</p>
+            <p className="text-sm font-semibold text-[var(--color-ink)]">Garden assistant</p>
+            <p className="text-xs text-[var(--color-muted)]">Your plants, tasks, care plan, diagnoses, and reminders</p>
           </div>
-          <span className="ml-auto flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/80">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Live
-          </span>
         </div>
       </div>
 
@@ -148,13 +141,13 @@ export function ChatView() {
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] text-[var(--color-canopy)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--color-line)] bg-white/5 text-[var(--color-ink)]">
               <LeafIcon />
             </div>
             <div>
-              <p className="text-base font-semibold text-[var(--color-ink)]">Ask your garden anything</p>
+              <p className="text-base font-semibold text-[var(--color-ink)]">What do you need to know?</p>
               <p className="mt-1 text-sm text-[var(--color-muted)]">
-                I can help with today&apos;s tasks, plant health, and care advice.
+                Ask about a plant, task, diagnosis, weather, or reminder.
               </p>
             </div>
             <div className="mt-2 flex flex-wrap justify-center gap-2">
@@ -163,7 +156,7 @@ export function ChatView() {
                   key={suggestion}
                   type="button"
                   onClick={() => void sendMessage(suggestion)}
-                  className="rounded-full border border-[var(--color-line)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition hover:border-[var(--color-canopy)]/20 hover:bg-[var(--color-canvas-soft)] hover:text-[var(--color-ink)]"
+                  className="rounded-full border border-[var(--color-line)] bg-white/5 px-3 py-1.5 text-xs font-medium text-[var(--color-muted)] transition hover:border-white/20 hover:bg-white/8 hover:text-[var(--color-ink)]"
                 >
                   {suggestion}
                 </button>
@@ -180,14 +173,14 @@ export function ChatView() {
                 <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-xs font-bold ${
                   message.role === "user"
                     ? "bg-[var(--color-canopy)] text-white"
-                    : "border border-[var(--color-line)] bg-white text-[var(--color-canopy)]"
+                    : "border border-[var(--color-line)] bg-white/5 text-[var(--color-ink)]"
                 }`}>
                   {message.role === "user" ? "U" : <LeafIcon />}
                 </div>
                 <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 ${
                   message.role === "user"
                     ? "bg-[var(--color-canopy)] text-white"
-                    : "border border-[var(--color-line)] bg-white text-[var(--color-ink)]"
+                    : "border border-[var(--color-line)] bg-white/5 text-[var(--color-ink)]"
                 }`}>
                   {message.content || (streaming && message.role === "assistant" ? (
                     <span className="inline-flex items-center gap-1">
@@ -206,13 +199,13 @@ export function ChatView() {
 
       {/* Error */}
       {error ? (
-        <div className="shrink-0 mx-4 mb-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">
+        <div className="shrink-0 mx-4 mb-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs text-[var(--color-muted)]">
           {error}
         </div>
       ) : null}
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[var(--color-line)] bg-white px-4 py-3">
+      <div className="shrink-0 border-t border-[var(--color-line)] bg-[var(--color-surface)] px-4 py-3">
         <form onSubmit={handleSubmit} className="mx-auto flex max-w-2xl items-end gap-2">
           <textarea
             value={input}
@@ -226,19 +219,19 @@ export function ChatView() {
             placeholder="Ask about your plants, tasks, or care advice…"
             rows={1}
             disabled={streaming}
-            className="flex-1 resize-none rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-canopy)]/40 focus:outline-none focus:ring-1 focus:ring-[var(--color-canopy)]/20 disabled:opacity-60"
+            className="flex-1 resize-none rounded-xl border border-[var(--color-line)] bg-white/5 px-4 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-white/20 focus:outline-none focus:ring-1 focus:ring-white/20 disabled:opacity-60"
             style={{ maxHeight: 120, overflowY: "auto" }}
           />
           <button
             type="submit"
             disabled={!input.trim() || streaming}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-canopy)] text-white shadow-sm transition hover:bg-[var(--color-canopy)]/90 disabled:opacity-40"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-canopy)] text-white shadow-sm transition hover:bg-[var(--color-primary-hover)] disabled:opacity-40"
           >
             <SendIcon />
           </button>
         </form>
         <p className="mx-auto mt-1.5 max-w-2xl text-center text-[9px] text-[var(--color-muted)]">
-          Press Enter to send · Shift+Enter for new line
+          Enter to send · Shift+Enter for a new line
         </p>
       </div>
     </div>

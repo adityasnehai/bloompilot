@@ -18,7 +18,12 @@ export async function POST(request: NextRequest) {
   const plantId = request.nextUrl.searchParams.get("plantId");
   if (!plantId) return NextResponse.json({ error: "plantId required" }, { status: 400 });
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Invalid multipart form" }, { status: 400 });
+  }
   const file = formData.get("photo");
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "photo file required" }, { status: 400 });

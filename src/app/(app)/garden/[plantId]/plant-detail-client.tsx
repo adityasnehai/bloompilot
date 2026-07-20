@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import type { PlantNote } from "@/lib/plant-notes";
 
 const STAGES = ["seedling", "sprout", "growing", "mature", "flowering", "dormant"] as const;
@@ -9,12 +9,12 @@ type Stage = (typeof STAGES)[number];
 type MilestoneItem = { id: string; stage: string; note: string | null; recordedAt: string };
 
 const STAGE_COLORS: Record<Stage, string> = {
-  seedling: "bg-[rgba(76,121,97,0.12)] text-[var(--color-moss)]",
-  sprout: "bg-[rgba(76,121,97,0.16)] text-[var(--color-moss)]",
-  growing: "bg-[rgba(76,121,97,0.2)] text-[var(--color-moss)]",
-  mature: "bg-[rgba(76,121,97,0.25)] text-[var(--color-ink)]",
-  flowering: "bg-[rgba(197,162,90,0.18)] text-[var(--color-gold)]",
-  dormant: "bg-[rgba(16,52,39,0.08)] text-[var(--color-muted)]",
+  seedling: "border-white/10 bg-white/5 text-[var(--color-muted)]",
+  sprout: "border-white/10 bg-white/6 text-[var(--color-muted)]",
+  growing: "border-white/12 bg-white/8 text-[var(--color-ink)]",
+  mature: "border-white/14 bg-white/10 text-[var(--color-ink)]",
+  flowering: "border-white/12 bg-white/8 text-[var(--color-ink)]",
+  dormant: "border-white/10 bg-white/5 text-[var(--color-muted)]",
 };
 
 function fmtDate(iso: string) {
@@ -34,9 +34,129 @@ export function PlantDetailClient({
 }) {
   return (
     <>
+      <QuickCarePanel plantId={plantId} plantName={plantName} />
+      <HealthTrendPanel plantId={plantId} />
       <NotesPanel plantId={plantId} plantName={plantName} initialNotes={initialNotes} />
       <MilestonesPanel plantId={plantId} plantName={plantName} initialMilestones={initialMilestones} />
     </>
+  );
+}
+
+const CARE_ACTIONS = [
+  { type: "watered", label: "Watered", emoji: "💧" },
+  { type: "fertilized", label: "Fertilized", emoji: "🌱" },
+  { type: "inspected", label: "Inspected", emoji: "🔍" },
+] as const;
+
+function QuickCarePanel({ plantId, plantName }: { plantId: string; plantName: string }) {
+  const [logging, setLogging] = useState<string | null>(null);
+  const [logged, setLogged] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function logCare(eventType: string) {
+    if (logging) return;
+    setLogging(eventType);
+    setError(null);
+    try {
+      const response = await fetch("/api/plants/log-care", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plantId, plantName, eventType }),
+      });
+      if (!response.ok) throw new Error("Care log failed");
+      setLogged(eventType);
+      setTimeout(() => setLogged(null), 2000);
+    } catch {
+      setError("Could not save this care event. Try again.");
+    } finally {
+      setLogging(null);
+    }
+  }
+
+  return (
+    <section className="surface-panel px-5 py-5 sm:px-6">
+      <p className="eyebrow">Quick log</p>
+      <h3 className="mt-1 text-base font-semibold text-[var(--color-ink)]">Log care today</h3>
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {CARE_ACTIONS.map((action) => (
+          <button
+            key={action.type}
+            type="button"
+            onClick={() => logCare(action.type)}
+            disabled={!!logging}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
+              logged === action.type
+                ? "border-white/14 bg-white/10 text-[var(--color-ink)]"
+                : "border-[var(--color-line)] bg-white/5 text-[var(--color-muted)] hover:border-white/20 hover:text-[var(--color-ink)]"
+            }`}
+          >
+            {logging === action.type ? "…" : action.emoji} {logged === action.type ? "Logged!" : action.label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-[var(--color-muted)]">Updates the care timeline and health history.</p>
+      {error ? <p role="alert" className="mt-2 text-xs text-[var(--color-muted)]">{error}</p> : null}
+    </section>
+  );
+}
+
+type TrendPoint = { date: string; score: number };
+
+function HealthTrendPanel({ plantId }: { plantId: string }) {
+  const [trend, setTrend] = useState<TrendPoint[] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/plants/trend?plantId=${encodeURIComponent(plantId)}`)
+      .then((r) => r.json())
+      .then((data: { trend: TrendPoint[] }) => { if (active) setTrend(data.trend ?? []); })
+      .catch(() => { if (active) setTrend([]); });
+    return () => { active = false; };
+  }, [plantId]);
+
+  if (trend !== null && trend.length === 0) return null;
+
+  const W = 260;
+  const H = 56;
+  const pad = 4;
+
+  return (
+    <section className="surface-panel px-5 py-5 sm:px-6">
+      <p className="eyebrow">Trend</p>
+      <h3 className="mt-1 text-base font-semibold text-[var(--color-ink)]">14-day health</h3>
+      {trend === null ? (
+        <p className="mt-3 text-sm text-[var(--color-muted)]">Loading trend…</p>
+      ) : (() => {
+        const points = trend.map((p, i) => {
+          const x = pad + (i / Math.max(1, trend.length - 1)) * (W - pad * 2);
+          const y = H - pad - (p.score / 100) * (H - pad * 2);
+          return `${x},${y}`;
+        });
+        const polyline = points.join(" ");
+        const last = trend[trend.length - 1].score;
+        const color = last >= 75 ? "#10b981" : last >= 50 ? "#f59e0b" : "#ef4444";
+        const [lx, ly] = points[points.length - 1].split(",");
+        return (
+          <div className="mt-3">
+            <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
+              <span>Latest score</span>
+              <span className="font-semibold" style={{ color }}>{last}/100</span>
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ height: H }}>
+              <defs>
+                <linearGradient id={`grad-${plantId}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              <polygon points={`${pad},${H} ${polyline} ${W - pad},${H}`} fill={`url(#grad-${plantId})`} />
+              <polyline points={polyline} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+              <circle cx={lx} cy={ly} r="3" fill={color} />
+            </svg>
+          </div>
+        );
+      })()}
+    </section>
   );
 }
 
@@ -79,7 +199,7 @@ function NotesPanel({
 
   return (
     <section className="surface-panel px-5 py-5 sm:px-6">
-      <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Notes</p>
+      <p className="eyebrow">Notes</p>
       <h3 className="mt-1 text-base font-semibold text-[var(--color-ink)]">Plant journal</h3>
 
       <div className="mt-4">
@@ -88,13 +208,13 @@ function NotesPanel({
           onChange={(e) => setBody(e.target.value)}
           placeholder="Add an observation, reminder, or note..."
           rows={3}
-          className="w-full resize-none rounded-xl border border-[rgba(16,52,39,0.12)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-moss)] focus:outline-none"
+          className="w-full resize-none rounded-xl border border-[var(--color-line)] bg-white/5 px-3 py-2.5 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-white/20 focus:outline-none"
         />
-        {error && <p className="mt-1 text-xs text-[var(--color-copper)]">{error}</p>}
+        {error && <p className="mt-1 text-xs text-[var(--color-muted)]">{error}</p>}
         <button
           onClick={handleAdd}
           disabled={pending || !body.trim()}
-          className="mt-2 rounded-lg bg-[var(--color-moss)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          className="mt-2 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black disabled:opacity-50"
         >
           {pending ? "Saving…" : "Add note"}
         </button>
@@ -108,7 +228,7 @@ function NotesPanel({
               <p className="mt-1 text-xs text-[var(--color-muted)]">{fmtDate(note.createdAt)}</p>
               <button
                 onClick={() => handleDelete(note.id)}
-                className="absolute right-2 top-2 rounded p-0.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-copper)] group-hover:opacity-100"
+                className="absolute right-2 top-2 rounded p-0.5 text-[var(--color-muted)] opacity-0 transition-opacity hover:text-[var(--color-ink)] group-hover:opacity-100"
                 title="Delete note"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-3.5 w-3.5">
@@ -159,7 +279,7 @@ function MilestonesPanel({
 
   return (
     <section className="surface-panel px-5 py-5 sm:px-6">
-      <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">Growth</p>
+      <p className="eyebrow">Growth</p>
       <h3 className="mt-1 text-base font-semibold text-[var(--color-ink)]">Milestones</h3>
 
       <div className="mt-4">
@@ -168,10 +288,10 @@ function MilestonesPanel({
             <button
               key={s}
               onClick={() => setStage(s)}
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize transition-all ${
+              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize transition-all ${
                 stage === s
                   ? STAGE_COLORS[s]
-                  : "border border-[rgba(16,52,39,0.08)] bg-white text-[var(--color-muted)]"
+                  : "border-[var(--color-line)] bg-white/5 text-[var(--color-muted)]"
               }`}
             >
               {s}
@@ -183,13 +303,13 @@ function MilestonesPanel({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Optional note…"
-          className="mt-2 w-full rounded-xl border border-[rgba(16,52,39,0.12)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-moss)] focus:outline-none"
+          className="mt-2 w-full rounded-xl border border-[var(--color-line)] bg-white/5 px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-white/20 focus:outline-none"
         />
-        {error && <p className="mt-1 text-xs text-[var(--color-copper)]">{error}</p>}
+        {error && <p className="mt-1 text-xs text-[var(--color-muted)]">{error}</p>}
         <button
           onClick={handleRecord}
           disabled={pending}
-          className="mt-2 rounded-lg bg-[var(--color-moss)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          className="mt-2 rounded-lg bg-white px-3 py-1.5 text-xs font-medium text-black disabled:opacity-50"
         >
           {pending ? "Saving…" : "Record milestone"}
         </button>
@@ -199,7 +319,7 @@ function MilestonesPanel({
         <ol className="mt-4 space-y-2">
           {milestones.map((m) => (
             <li key={m.id} className="flex items-start gap-2">
-              <span className={`mt-0.5 rounded-full px-2 py-0.5 text-xs capitalize ${STAGE_COLORS[m.stage as Stage] ?? "bg-[rgba(16,52,39,0.08)] text-[var(--color-muted)]"}`}>
+              <span className={`mt-0.5 rounded-full border px-2 py-0.5 text-xs capitalize ${STAGE_COLORS[m.stage as Stage] ?? "border-white/10 bg-white/5 text-[var(--color-muted)]"}`}>
                 {m.stage}
               </span>
               <div className="flex-1 min-w-0">

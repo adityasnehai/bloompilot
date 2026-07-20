@@ -1,51 +1,18 @@
 import { updateProfileAction } from "@/app/actions";
-import { CheckboxChip } from "@/components/forms/checkbox-chip";
 import { GardenTypeSelector } from "@/components/forms/garden-type-selector";
-import { ReminderWindowField } from "@/components/forms/reminder-window-field";
+import { ReminderPreferencesField } from "@/components/forms/reminder-preferences-field";
 import { LocationPicker } from "@/components/location/location-picker";
 import { SelectField } from "@/components/forms/select-field";
 import { TextField } from "@/components/forms/text-field";
 import { PushSubscriptionCard } from "@/components/settings/push-subscription-card";
+import { TelegramConnectionCard } from "@/components/settings/telegram-connection-card";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { GARDEN_TYPE_CHOICES } from "@/lib/garden-type";
 import { requireSession } from "@/lib/session";
+import { createTelegramConnectLink, readTelegramChatId } from "@/lib/telegram";
+import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { redirect } from "next/navigation";
-
-const gardenTypes = [
-  {
-    label: "Indoor",
-    value: "Indoor",
-    description: "Plants inside the home near windows and shelves.",
-    imagePath: "/garden-types/indoor-collection.svg",
-    info: "No outdoor weather affects your plants. Focus on light and humidity.",
-  },
-  {
-    label: "Balcony",
-    value: "Balcony",
-    description: "Small outdoor setup with rail planters and compact pots.",
-    imagePath: "/garden-types/balcony-garden.svg",
-    info: "Partial weather exposure. Wind and frost can affect plants.",
-  },
-  {
-    label: "Backyard",
-    value: "Backyard",
-    description: "Larger outdoor space with beds or open ground.",
-    imagePath: "/garden-types/backyard-garden.svg",
-    info: "Full weather exposure. Ground beds hold moisture longer than pots.",
-  },
-  {
-    label: "Terrace",
-    value: "Terrace",
-    description: "Open rooftop or terrace with strong sun and wind.",
-    imagePath: "/garden-types/terrace-rooftop-garden.svg",
-    info: "Maximum exposure. Wind and UV are strongest here — pots dry very fast.",
-  },
-  {
-    label: "Container Garden",
-    value: "Container Garden",
-    description: "Movable pots and containers on a patio or hard surface.",
-    imagePath: "/garden-types/patio-container-garden.svg",
-    info: "Outdoor pots that can be moved. Rain and frost still relevant.",
-  },
-];
 
 function getCustomReminder(defaultValue: string) {
   return [
@@ -63,6 +30,9 @@ export default async function SettingsPage({
   searchParams?: Promise<{ saved?: string }>;
 }) {
   const session = await requireSession();
+  const identity = readWorkspaceIdentityByEmail(session.email);
+  const telegramConnectUrl = identity ? createTelegramConnectLink(identity.id) : null;
+  const telegramChatId = identity ? readTelegramChatId(identity.id) : null;
   const resolvedSearchParams = await searchParams;
   const saved = resolvedSearchParams?.saved === "1";
 
@@ -72,17 +42,17 @@ export default async function SettingsPage({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <section className="surface-panel px-5 py-6 sm:px-6">
+      <Card as="section" className="px-5 py-6 sm:px-6">
         <div className="space-y-3">
-          <p className="text-sm text-[var(--color-muted)]">Settings</p>
-          <h2 className="text-3xl font-semibold leading-tight text-[var(--color-ink)]">
+          <p className="eyebrow">Settings</p>
+          <h2 className="text-2xl font-semibold leading-tight text-[var(--color-ink)] lg:text-3xl">
             Keep your setup current.
           </h2>
           <p className="max-w-2xl text-sm leading-6 text-[var(--color-muted)]">
-            Update the account details, garden setup, and reminder timing BloomPilot uses across the product.
+            Update account details, garden context, and reminder timing used across BloomPilot.
           </p>
           {saved ? (
-            <p className="inline-flex rounded-full border border-[rgba(76,121,97,0.24)] bg-[rgba(76,121,97,0.08)] px-3 py-1 text-sm text-[var(--color-moss)]">
+            <p className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-[var(--color-ink)]">
               Settings saved.
             </p>
           ) : null}
@@ -138,81 +108,40 @@ export default async function SettingsPage({
             <GardenTypeSelector
               name="gardenType"
               defaultValue={session.gardenType}
-              options={gardenTypes}
+              options={GARDEN_TYPE_CHOICES}
             />
           </div>
 
-          <ReminderWindowField
+          <ReminderPreferencesField
             defaultSuggested={session.reminderWindow}
             defaultCustom={getCustomReminder(session.reminderWindow)}
+            defaultChannels={session.channels}
+            accountEmail={session.email}
           />
 
-          <div className="grid gap-3 md:grid-cols-2">
-            <CheckboxChip
-              name="channels"
-              value="email"
-              label="Email reminders"
-              description="Preferred for weekly care summaries and task digests."
-              defaultChecked={session.channels.includes("email")}
-            />
-            <CheckboxChip
-              name="channels"
-              value="push"
-              label="Push notifications"
-              description="Ideal for urgent care nudges on mobile."
-              defaultChecked={session.channels.includes("push")}
-            />
-            <CheckboxChip
-              name="channels"
-              value="whatsapp"
-              label="WhatsApp reminders"
-              description="Daily care digest via Twilio WhatsApp. Requires phone number below."
-              defaultChecked={session.channels.includes("whatsapp")}
-            />
-          </div>
-
           <div>
-            <p className="text-sm font-medium text-[var(--color-ink)] mb-3">WhatsApp number</p>
-            <div className="rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-3">
-              <label className="block text-xs text-[var(--color-muted)] mb-1.5">
-                Phone number with country code (e.g. +919876543210)
-              </label>
-              <input
-                type="tel"
-                name="whatsappNumber"
-                defaultValue={session.whatsappNumber ?? ""}
-                placeholder="+91XXXXXXXXXX"
-                className="w-full rounded-lg border border-[var(--color-line)] bg-white px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-muted)] focus:border-[var(--color-moss)] focus:outline-none"
-              />
-              <p className="mt-1.5 text-[11px] text-[var(--color-muted)]">
-                Must first send &ldquo;join&rdquo; code to the sandbox number. Leave blank to disable.
-              </p>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium text-[var(--color-ink)] mb-3">Email notifications</p>
+            <p className="eyebrow mb-3">Email notifications</p>
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-3 cursor-pointer hover:border-[var(--color-canopy)]/40 transition-colors">
+              <label className="flex items-center gap-3 rounded-xl border border-[var(--color-line)] bg-white/5 px-4 py-3 cursor-pointer transition-colors hover:border-white/20 hover:bg-white/8">
                 <input
                   type="checkbox"
                   name="emailDailyReminder"
                   value="1"
                   defaultChecked={session.emailDailyReminder !== false}
-                  className="h-4 w-4 rounded accent-[var(--color-canopy)]"
+                  className="h-4 w-4 rounded accent-white"
                 />
                 <div>
                   <p className="text-sm font-medium text-[var(--color-ink)]">Daily task reminders</p>
                   <p className="text-xs text-[var(--color-muted)] mt-0.5">Email when you have tasks due today.</p>
                 </div>
               </label>
-              <label className="flex items-center gap-3 rounded-xl border border-[var(--color-line)] bg-[var(--color-canvas-soft)] px-4 py-3 cursor-pointer hover:border-[var(--color-canopy)]/40 transition-colors">
+              <label className="flex items-center gap-3 rounded-xl border border-[var(--color-line)] bg-white/5 px-4 py-3 cursor-pointer transition-colors hover:border-white/20 hover:bg-white/8">
                 <input
                   type="checkbox"
                   name="emailWeeklyDigest"
                   value="1"
                   defaultChecked={session.emailWeeklyDigest !== false}
-                  className="h-4 w-4 rounded accent-[var(--color-canopy)]"
+                  className="h-4 w-4 rounded accent-white"
                 />
                 <div>
                   <p className="text-sm font-medium text-[var(--color-ink)]">Weekly digest</p>
@@ -222,39 +151,37 @@ export default async function SettingsPage({
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
-            className="button-primary mt-2 sm:w-fit"
+            className="mt-2 sm:w-fit"
           >
             Save changes
-          </button>
+          </Button>
         </form>
-      </section>
+      </Card>
 
-      <aside className="surface-panel px-5 py-6">
+      <Card as="aside" className="px-5 py-6">
         <p className="text-sm text-[var(--color-muted)]">Account snapshot</p>
         <div className="mt-4 space-y-4 text-sm">
-          <div className="surface-card px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
-              Profile
-            </p>
+          <Card className="px-4 py-4">
+            <p className="eyebrow">Profile</p>
             <p className="mt-2 leading-6 text-[var(--color-ink)]">
-              Your name, email, location, and garden type stay available across
-              the product so setup does not need to be repeated.
+              Name, email, location, and garden context stay available across the product.
             </p>
-          </div>
-          <div className="surface-card px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-[var(--color-muted)]">
-              Care preferences
-            </p>
+          </Card>
+          <Card className="px-4 py-4">
+            <p className="eyebrow">Care preferences</p>
             <p className="mt-2 leading-6 text-[var(--color-ink)]">
-              Reminder windows and delivery channels shape when BloomPilot
-              surfaces plant care throughout the week.
+              Reminder windows and delivery channels shape when BloomPilot surfaces plant care.
             </p>
-          </div>
+          </Card>
           <PushSubscriptionCard />
+          <TelegramConnectionCard
+            connectUrl={telegramConnectUrl}
+            connected={Boolean(telegramChatId)}
+          />
         </div>
-      </aside>
+      </Card>
     </div>
   );
 }

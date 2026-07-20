@@ -110,6 +110,7 @@ async function identifyWithPlantNet(photo: File) {
   const response = await fetch(url, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!response.ok) {
@@ -151,6 +152,7 @@ async function identifyCandidatesWithPlantNet(photo: File) {
   const response = await fetch(url, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   if (!response.ok) {

@@ -1,0 +1,12 @@
+{
+  "name": "bloompilot-eval",
+  "private": true,
+  "type": "module",
+  "description": "Automated evaluation harness for BloomPilot's multi-agent care-plan pipeline, diagnosis system, reminders, and API contract robustness.",
+  "scripts": {
+    "eval": "node run-evaluation.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

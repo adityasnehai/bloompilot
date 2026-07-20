@@ -71,13 +71,18 @@ export async function sendDailyReminder(
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 
   try {
-    await resend.emails.send({
+    const response = await resend.emails.send({
       from: fromEmail,
       to: [userEmail],
       subject: `🌿 ${tasks.length} plant care task${tasks.length !== 1 ? "s" : ""} due today — ${today}`,
       html: buildReminderHtml(userName, tasks),
       text: `Hi ${userName}, you have ${tasks.length} task${tasks.length !== 1 ? "s" : ""} due today:\n\n${tasks.map((t) => `• ${t.plant_name}: ${t.title}`).join("\n")}`,
     });
+
+    if (response.error) {
+      return { sent: false, taskCount: tasks.length, reason: response.error.message };
+    }
+
     return { sent: true, taskCount: tasks.length };
   } catch (err) {
     return {

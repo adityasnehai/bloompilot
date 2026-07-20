@@ -9,14 +9,23 @@ import {
   sendWebPushReminder,
   type PushSubscriptionRecord,
 } from "@/lib/notifications/web-push";
-import { queueWhatsAppReminder } from "@/lib/notifications/whatsapp";
+import { sendTelegramNotification } from "@/lib/notifications/telegram";
+import {
+  extractReminderChannels,
+  formatReminderChannelSequence,
+  normalizeReminderChannels,
+  describeReminderMode,
+} from "@/lib/reminder-channels";
 import type {
   ReminderChannel,
   ReminderSendPayload,
   ReminderSendResult,
 } from "@/lib/notifications/types";
+import { isReminderWindowActive, parseWindow } from "@/lib/reminder-window";
 import { readSession, type NotificationChannel } from "@/lib/session";
 import { upsertWorkspaceProfile } from "@/lib/workspace-store";
+
+export { isReminderWindowActive, parseWindow } from "@/lib/reminder-window";
 
 type ReminderRunRow = {
   id: string;
@@ -56,7 +65,6 @@ type ReminderCandidate = {
   channel: ReminderChannel;
   priority: CarePlanAction["priority"];
   dueDate: string;
-  isWatering: boolean;
   isEscalation: boolean;
   title: string;
   message: string;
@@ -66,7 +74,7 @@ type ReminderCandidate = {
 };
 
 type ReminderSuppression = {
-  channel: ReminderChannel;
+  channel: ReminderChannel | "all";
   task_id: string;
   plant_id: string | null;
   reason: string;
@@ -79,6 +87,22 @@ type ChannelStats = {
   suppressed: number;
 };
 
+type ReminderHistoryRow = {
+  task_id: string | null;
+  plant_id: string | null;
+  status: string;
+  created_at: string;
+  idempotency_key: string;
+};
+
+type ReminderHistoryState = {
+  recentKeys: Set<string>;
+  existingEventCount: number;
+  perPlantEventCounts: Map<string, number>;
+  escalationCounts: Map<string, number>;
+  lastLiveEventAt: Date | null;
+};
+
 export type ReminderDelivery = {
   id: string;
   channel: NotificationChannel;
@@ -87,6 +111,8 @@ export type ReminderDelivery = {
   preview: string;
   scheduledWindow: string;
   items: string[];
+  errorCode?: string | null;
+  errorMessage?: string | null;
 };
 
 export type ReminderRunPayload = {
@@ -111,68 +137,247 @@ export type StoredReminderRun = {
   payload: ReminderRunPayload;
 };
 
+export type ReminderUserProfile = {
+  userId: number;
+  email: string;
+  reminderWindow: string;
+  channels: NotificationChannel[];
+  telegramChatId: string | null;
+  timezone: string | null;
+  onboarded: boolean;
+};
+
+export type ReminderChannelReadiness = {
+  inApp: true;
+  email: boolean;
+  pushSelected: boolean;
+  pushReady: boolean;
+  pushSubscriptionCount: number;
+  telegramSelected: boolean;
+  telegramReady: boolean;
+  telegramChatId: string | null;
+  reminderWindow: string;
+};
+
 const DEDUPE_HOURS = 6;
 const MAX_REMINDERS_PER_PLANT_PER_DAY = 2;
 const MAX_ESCALATIONS_PER_PLANT_PER_DAY = 1;
+const MAX_REMINDER_EVENTS_PER_USER_PER_DAY = 5;
+const MIN_MINUTES_BETWEEN_LIVE_EVENTS = 75;
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function utcDate(value: Date | string) {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return date.toISOString().slice(0, 10);
-}
-
-function parseWindow(reminderWindow: string) {
-  const normalized = reminderWindow.trim();
-  const split = normalized.split("-").map((part) => part.trim());
-  if (split.length !== 2) {
-    return { fromMin: 7 * 60, toMin: 9 * 60, label: "07:00 AM - 09:00 AM" };
+function parseChannels(raw: string): NotificationChannel[] {
+  try {
+    return normalizeReminderChannels(extractReminderChannels(JSON.parse(raw)), ["email"]);
+  } catch {
+    return ["email"];
   }
+}
 
-  const from = parseMeridian(split[0]);
-  const to = parseMeridian(split[1]);
-  if (from === null || to === null) {
-    return { fromMin: 7 * 60, toMin: 9 * 60, label: "07:00 AM - 09:00 AM" };
+function readReminderUserProfile(userId: number) {
+  const database = getDatabase();
+  const row = database
+    .prepare(
+      `
+      SELECT id, email, reminder_window, channels_json, telegram_chat_id, timezone, onboarded
+      FROM users
+      WHERE id = ?
+      LIMIT 1
+      `,
+    )
+    .get(userId) as
+      | {
+          id: number;
+          email: string;
+          reminder_window: string;
+          channels_json: string;
+          telegram_chat_id: string | null;
+          timezone: string | null;
+          onboarded: number;
+        }
+      | undefined;
+
+  if (!row) return null;
+
+  return {
+    userId: row.id,
+    email: row.email,
+    reminderWindow: row.reminder_window,
+    channels: parseChannels(row.channels_json),
+    telegramChatId: row.telegram_chat_id,
+    timezone: row.timezone,
+    onboarded: Boolean(row.onboarded),
+  } satisfies ReminderUserProfile;
+}
+
+export function readAllReminderUserProfiles() {
+  const database = getDatabase();
+  const rows = database
+    .prepare(
+      `
+      SELECT id, email, reminder_window, channels_json, telegram_chat_id, timezone, onboarded
+      FROM users
+      WHERE onboarded = 1
+      `,
+    )
+    .all() as Array<{
+      id: number;
+      email: string;
+      reminder_window: string;
+      channels_json: string;
+      telegram_chat_id: string | null;
+      timezone: string | null;
+      onboarded: number;
+    }>;
+
+  return rows.map(
+    (row) =>
+      ({
+        userId: row.id,
+        email: row.email,
+        reminderWindow: row.reminder_window,
+        channels: parseChannels(row.channels_json),
+        telegramChatId: row.telegram_chat_id,
+        timezone: row.timezone,
+        onboarded: Boolean(row.onboarded),
+      }) satisfies ReminderUserProfile,
+  );
+}
+
+export async function readCurrentReminderChannelReadiness() {
+  const session = await readSession();
+  if (!session) return null;
+
+  const userId = await getCurrentWorkspaceUserId();
+  if (!userId) return null;
+
+  const profile = readReminderUserProfile(userId);
+  if (!profile) return null;
+
+  const database = getDatabase();
+  const pushSubscriptionCount = database
+    .prepare(
+      `
+      SELECT COUNT(*) AS count
+      FROM notification_subscriptions
+      WHERE user_id = ? AND active = 1
+      `,
+    )
+    .get(userId) as { count: number };
+
+  return {
+    inApp: true,
+    email: profile.channels.includes("email"),
+    pushSelected: profile.channels.includes("push"),
+    pushReady:
+      profile.channels.includes("push") && (pushSubscriptionCount.count ?? 0) > 0,
+    pushSubscriptionCount: pushSubscriptionCount.count ?? 0,
+    telegramSelected: profile.channels.includes("telegram"),
+    telegramReady:
+      profile.channels.includes("telegram") && Boolean(profile.telegramChatId),
+    telegramChatId: profile.telegramChatId,
+    reminderWindow: profile.reminderWindow,
+  } satisfies ReminderChannelReadiness;
+}
+
+function getZonedParts(date: Date, timezone: string | null) {
+  const timeZone = timezone || "UTC";
+
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(date);
+
+    const read = (type: string, fallback: string) =>
+      parts.find((part) => part.type === type)?.value ?? fallback;
+
+    const year = Number.parseInt(read("year", "1970"), 10);
+    const month = Number.parseInt(read("month", "01"), 10);
+    const day = Number.parseInt(read("day", "01"), 10);
+    let hour = Number.parseInt(read("hour", "00"), 10);
+    if (hour === 24) hour = 0;
+    const minute = Number.parseInt(read("minute", "00"), 10);
+
+    return { year, month, day, hour, minute };
+  } catch {
+    return {
+      year: date.getUTCFullYear(),
+      month: date.getUTCMonth() + 1,
+      day: date.getUTCDate(),
+      hour: date.getUTCHours(),
+      minute: date.getUTCMinutes(),
+    };
   }
-  return { fromMin: from, toMin: to, label: `${split[0]} - ${split[1]}` };
 }
 
-function parseMeridian(input: string) {
-  const match = input.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (!match) return null;
-  const rawHour = Number.parseInt(match[1], 10);
-  const minute = Number.parseInt(match[2], 10);
-  const meridian = match[3].toUpperCase();
-  if (!Number.isFinite(rawHour) || !Number.isFinite(minute)) return null;
-  if (rawHour < 1 || rawHour > 12 || minute < 0 || minute > 59) return null;
-  let hour24 = rawHour % 12;
-  if (meridian === "PM") hour24 += 12;
-  return hour24 * 60 + minute;
+function zonedDateLabel(date: Date | string, timezone: string | null) {
+  const source = typeof date === "string" ? new Date(date) : date;
+  const { year, month, day } = getZonedParts(source, timezone);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function isInsideWindow(date: Date, fromMin: number, toMin: number) {
-  const mins = date.getUTCHours() * 60 + date.getUTCMinutes();
+function zonedMinutesOfDay(date: Date, timezone: string | null) {
+  const { hour, minute } = getZonedParts(date, timezone);
+  return hour * 60 + minute;
+}
+
+function normalizeWindowRange(fromMin: number, toMin: number) {
   if (fromMin <= toMin) {
-    return mins >= fromMin && mins <= toMin;
+    return { start: fromMin, end: toMin };
   }
-  return mins >= fromMin || mins <= toMin;
+  return { start: fromMin, end: toMin + 24 * 60 };
 }
 
-function scheduleForWindow(now: Date, fromMin: number, toMin: number) {
-  const inside = isInsideWindow(now, fromMin, toMin);
-  if (inside) {
-    return now.toISOString();
-  }
-  const scheduled = new Date(now);
-  const hour = Math.floor(fromMin / 60);
-  const minute = fromMin % 60;
-  scheduled.setUTCHours(hour, minute, 0, 0);
-  if (scheduled.getTime() < now.getTime()) {
-    scheduled.setUTCDate(scheduled.getUTCDate() + 1);
-  }
-  return scheduled.toISOString();
+function normalizeCurrentMinutes(
+  currentMinutes: number,
+  fromMin: number,
+  toMin: number,
+) {
+  if (fromMin <= toMin) return currentMinutes;
+  return currentMinutes < fromMin ? currentMinutes + 24 * 60 : currentMinutes;
+}
+
+function getSlotMinute(
+  action: Pick<CarePlanAction, "priority">,
+  isEscalation: boolean,
+  fromMin: number,
+  toMin: number,
+) {
+  const { start, end } = normalizeWindowRange(fromMin, toMin);
+  const span = end - start;
+  if (isEscalation) return Math.max(start, end - 30);
+  if (action.priority === "high") return start;
+  if (action.priority === "medium") return start + Math.floor(span / 2);
+  return start + Math.floor((span * 3) / 4);
+}
+
+function isSlotDueNow(
+  date: Date,
+  timezone: string | null,
+  fromMin: number,
+  toMin: number,
+  slotMinute: number,
+) {
+  const current = normalizeCurrentMinutes(
+    zonedMinutesOfDay(date, timezone),
+    fromMin,
+    toMin,
+  );
+  return current >= slotMinute;
+}
+
+function minutesSince(date: Date, previous: Date | null) {
+  if (!previous) return Number.POSITIVE_INFINITY;
+  return Math.floor((date.getTime() - previous.getTime()) / (60 * 1000));
 }
 
 async function getCurrentWorkspaceUserId() {
@@ -186,14 +391,11 @@ function buildWateringSkipMap(
   targetDate: string,
 ) {
   const skip = new Set<string>();
-  const water = new Set<string>();
   for (const forecast of forecasts) {
     const day = forecast.days.find((entry) => entry.date === targetDate);
-    if (!day) continue;
-    if (day.label === "skip") skip.add(forecast.plant_id);
-    if (day.label === "water") water.add(forecast.plant_id);
+    if (day?.label === "skip") skip.add(forecast.plant_id);
   }
-  return { skip, water };
+  return { skip };
 }
 
 function priorityOrder(priority: CarePlanAction["priority"]) {
@@ -229,147 +431,266 @@ function makeDeliveryPayload(action: CarePlanAction): ReminderSendPayload {
   };
 }
 
-function isLowPriorityDigest(action: CarePlanAction) {
-  return action.priority === "low";
-}
-
-async function readDedupKeys(userId: number, fromIso: string) {
-  const database = getDatabase();
-  const rows = database
-    .prepare(
-      `
-      SELECT idempotency_key
-      FROM reminder_deliveries
-      WHERE user_id = ?
-        AND datetime(created_at) >= datetime(?)
-      `,
-    )
-    .all(userId, fromIso) as { idempotency_key: string }[];
-  return new Set(rows.map((row) => row.idempotency_key));
+function buildIdempotencyKey(params: {
+  userId: number;
+  taskId: string;
+  channel: ReminderChannel;
+  localDate: string;
+  windowLabel: string;
+  phase: "base" | "esc" | "digest";
+}) {
+  return [
+    "bp",
+    params.userId,
+    params.taskId,
+    params.channel,
+    params.localDate,
+    params.windowLabel.replaceAll("|", "/"),
+    params.phase,
+  ].join("|");
 }
 
 function initChannelStats(): Record<ReminderChannel, ChannelStats> {
   return {
     email: { sent: 0, queued: 0, failed: 0, suppressed: 0 },
     push: { sent: 0, queued: 0, failed: 0, suppressed: 0 },
-    whatsapp: { sent: 0, queued: 0, failed: 0, suppressed: 0 },
+    telegram: { sent: 0, queued: 0, failed: 0, suppressed: 0 },
   };
 }
 
-export async function runReminderSweep(trigger = "manual") {
-  const session = await readSession();
-  if (!session) return null;
+function readReminderHistoryState(params: {
+  userId: number;
+  fromIso: string;
+  localDate: string;
+  timezone: string | null;
+}) {
+  const database = getDatabase();
+  const rows = database
+    .prepare(
+      `
+      SELECT task_id, plant_id, status, created_at, idempotency_key
+      FROM reminder_deliveries
+      WHERE user_id = ?
+        AND datetime(created_at) >= datetime(?)
+      `,
+    )
+    .all(params.userId, params.fromIso) as ReminderHistoryRow[];
 
-  const userId = await getCurrentWorkspaceUserId();
-  if (!userId) return null;
+  const recentKeys = new Set<string>();
+  const perPlantEventCounts = new Map<string, number>();
+  const escalationCounts = new Map<string, number>();
+  const seenDailyTasks = new Set<string>();
+  let lastLiveEventAt: Date | null = null;
 
-  const plan = readLatestCarePlan(userId);
+  for (const row of rows) {
+    recentKeys.add(row.idempotency_key);
+
+    if (row.status !== "sent" && row.status !== "queued") continue;
+
+    const createdAt = new Date(row.created_at);
+    if (Number.isNaN(createdAt.getTime())) continue;
+
+    if (!lastLiveEventAt || createdAt.getTime() > lastLiveEventAt.getTime()) {
+      lastLiveEventAt = createdAt;
+    }
+
+    if (zonedDateLabel(createdAt, params.timezone) !== params.localDate) continue;
+    if (!row.task_id) continue;
+    if (seenDailyTasks.has(row.task_id)) continue;
+    seenDailyTasks.add(row.task_id);
+
+    if (row.plant_id) {
+      perPlantEventCounts.set(
+        row.plant_id,
+        (perPlantEventCounts.get(row.plant_id) ?? 0) + 1,
+      );
+      if (row.idempotency_key.endsWith("|esc")) {
+        escalationCounts.set(
+          row.plant_id,
+          (escalationCounts.get(row.plant_id) ?? 0) + 1,
+        );
+      }
+    }
+  }
+
+  return {
+    recentKeys,
+    existingEventCount: seenDailyTasks.size,
+    perPlantEventCounts,
+    escalationCounts,
+    lastLiveEventAt,
+  } satisfies ReminderHistoryState;
+}
+
+function isLowPriorityDigest(action: CarePlanAction) {
+  return action.priority === "low";
+}
+
+async function runReminderSweepForProfile(
+  profile: ReminderUserProfile,
+  trigger: string,
+) {
+  if (!profile.onboarded) return null;
+
+  const plan = readLatestCarePlan(profile.userId);
   if (!plan) return null;
 
   const now = new Date();
-  const today = utcDate(now);
-  const window = parseWindow(session.reminderWindow);
-  const scheduledFor = scheduleForWindow(now, window.fromMin, window.toMin);
-  const waterState = buildWateringSkipMap(plan.watering_forecast, today);
+  const timezone = profile.timezone || "UTC";
+  const localDate = zonedDateLabel(now, timezone);
+  const window = parseWindow(profile.reminderWindow);
+  const activeWindow = isReminderWindowActive(profile, now);
+  const waterState = buildWateringSkipMap(plan.watering_forecast, localDate);
   const dedupeFrom = new Date(now.getTime() - DEDUPE_HOURS * 60 * 60 * 1000).toISOString();
-  const recentKeys = await readDedupKeys(userId, dedupeFrom);
+  const history = readReminderHistoryState({
+    userId: profile.userId,
+    fromIso: dedupeFrom,
+    localDate,
+    timezone,
+  });
 
-  const approved = [...plan.today_actions, ...plan.care_calendar.flatMap((g) => g.tasks)]
-    .filter((action) => action.status === "approved")
-    .sort((a, b) => priorityOrder(a.priority) - priorityOrder(b.priority));
+  const approved = Array.from(
+    new Map(
+      [...plan.today_actions, ...plan.care_calendar.flatMap((group) => group.tasks)]
+        .filter((action) => action.status === "approved")
+        .map((action) => [action.id, action] as const),
+    ).values(),
+  ).sort((a, b) => priorityOrder(a.priority) - priorityOrder(b.priority));
 
+  const channels =
+    profile.channels.length > 0 ? profile.channels : (["email"] as NotificationChannel[]);
+  const reminderChannels = normalizeReminderChannels(channels as ReminderChannel[], ["email"]);
+  const reminderMode = describeReminderMode(reminderChannels);
+  const reminderOrder = formatReminderChannelSequence(reminderChannels);
   const channelStats = initChannelStats();
   const suppressions: ReminderSuppression[] = [];
-  const remindersPerPlant = new Map<string, number>();
-  const escalationsPerPlant = new Map<string, number>();
+  const perPlantCounts = new Map(history.perPlantEventCounts);
+  const escalationsPerPlant = new Map(history.escalationCounts);
   const wateringSeenPerPlant = new Set<string>();
   const candidates: ReminderCandidate[] = [];
+  let dailyEventCount = history.existingEventCount;
+  let lastLiveEventAt = history.lastLiveEventAt;
 
-  const channels = session.channels.length > 0 ? session.channels : (["email"] as NotificationChannel[]);
-  const reminderChannels = channels as ReminderChannel[];
+  const liveActions = approved.filter((action) => !isLowPriorityDigest(action));
+  const lowPriorityActions = approved.filter(isLowPriorityDigest);
 
-  for (const action of approved) {
+  for (const action of liveActions) {
     const taskId = action.id;
     const plantId = action.plant_id;
 
+    if (!activeWindow) {
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "outside_reminder_window",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
+      continue;
+    }
+
+    const escalation = action.priority === "high" && isOverdue(action, localDate);
+    const slotMinute = getSlotMinute(action, escalation, window.fromMin, window.toMin);
+
+    if (!isSlotDueNow(now, timezone, window.fromMin, window.toMin, slotMinute)) {
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "not_due_in_window_yet",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
+      continue;
+    }
+
     if (shouldSuppressWatering(action, waterState)) {
-      for (const channel of reminderChannels) {
-        suppressions.push({
-          channel,
-          task_id: taskId,
-          plant_id: plantId,
-          reason: "watering_suppressed_by_weather_or_skip_rule",
-        });
-        channelStats[channel].suppressed += 1;
-      }
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "watering_suppressed_by_weather_or_skip_rule",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
       continue;
     }
 
     if (plantId && action.type === "water") {
       if (wateringSeenPerPlant.has(plantId)) {
-        for (const channel of reminderChannels) {
-          suppressions.push({
-            channel,
-            task_id: taskId,
-            plant_id: plantId,
-            reason: "duplicate_watering_in_same_window",
-          });
-          channelStats[channel].suppressed += 1;
-        }
+        suppressions.push({
+          channel: "all",
+          task_id: taskId,
+          plant_id: plantId,
+          reason: "duplicate_watering_in_same_window",
+        });
+        for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
         continue;
       }
       wateringSeenPerPlant.add(plantId);
     }
 
+    if (dailyEventCount >= MAX_REMINDER_EVENTS_PER_USER_PER_DAY) {
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "max_reminder_events_per_user_per_day_reached",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
+      continue;
+    }
+
+    if (minutesSince(now, lastLiveEventAt) < MIN_MINUTES_BETWEEN_LIVE_EVENTS) {
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "minimum_spacing_between_live_reminders_not_elapsed",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
+      continue;
+    }
+
     if (plantId) {
-      const count = remindersPerPlant.get(plantId) ?? 0;
-      if (count >= MAX_REMINDERS_PER_PLANT_PER_DAY) {
-        for (const channel of reminderChannels) {
-          suppressions.push({
-            channel,
-            task_id: taskId,
-            plant_id: plantId,
-            reason: "max_reminders_per_plant_per_day_reached",
-          });
-          channelStats[channel].suppressed += 1;
-        }
+      const existingPlantCount = perPlantCounts.get(plantId) ?? 0;
+      if (existingPlantCount >= MAX_REMINDERS_PER_PLANT_PER_DAY) {
+        suppressions.push({
+          channel: "all",
+          task_id: taskId,
+          plant_id: plantId,
+          reason: "max_reminders_per_plant_per_day_reached",
+        });
+        for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
         continue;
       }
     }
 
-    const escalation = action.priority === "high" && isOverdue(action, today);
     if (plantId && escalation) {
-      const escalations = escalationsPerPlant.get(plantId) ?? 0;
-      if (escalations >= MAX_ESCALATIONS_PER_PLANT_PER_DAY) {
-        for (const channel of reminderChannels) {
-          suppressions.push({
-            channel,
-            task_id: taskId,
-            plant_id: plantId,
-            reason: "max_escalations_per_plant_per_day_reached",
-          });
-          channelStats[channel].suppressed += 1;
-        }
+      const existingEscalations = escalationsPerPlant.get(plantId) ?? 0;
+      if (existingEscalations >= MAX_ESCALATIONS_PER_PLANT_PER_DAY) {
+        suppressions.push({
+          channel: "all",
+          task_id: taskId,
+          plant_id: plantId,
+          reason: "max_escalations_per_plant_per_day_reached",
+        });
+        for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
         continue;
       }
-      escalationsPerPlant.set(plantId, escalations + 1);
     }
 
-    if (plantId) {
-      remindersPerPlant.set(plantId, (remindersPerPlant.get(plantId) ?? 0) + 1);
-    }
+    let eventAccepted = false;
 
     for (const channel of reminderChannels) {
-      const idempotencyKey = [
-        userId,
+      const idempotencyKey = buildIdempotencyKey({
+        userId: profile.userId,
         taskId,
         channel,
-        utcDate(scheduledFor),
-        window.label,
-        escalation ? "esc" : "base",
-      ].join(":");
+        localDate,
+        windowLabel: window.label,
+        phase: escalation ? "esc" : "base",
+      });
 
-      if (recentKeys.has(idempotencyKey)) {
+      if (history.recentKeys.has(idempotencyKey)) {
         suppressions.push({
           channel,
           task_id: taskId,
@@ -379,7 +700,9 @@ export async function runReminderSweep(trigger = "manual") {
         channelStats[channel].suppressed += 1;
         continue;
       }
-      recentKeys.add(idempotencyKey);
+
+      history.recentKeys.add(idempotencyKey);
+      eventAccepted = true;
 
       candidates.push({
         taskId,
@@ -388,63 +711,138 @@ export async function runReminderSweep(trigger = "manual") {
         channel,
         priority: action.priority,
         dueDate: action.due_date,
-        isWatering: action.type === "water",
         isEscalation: escalation,
         title: action.title,
         message: action.reason,
         idempotencyKey,
-        scheduledFor,
+        scheduledFor: now.toISOString(),
         payload: makeDeliveryPayload(action),
       });
     }
-  }
 
-  const lowPriorityDigest = approved.filter(isLowPriorityDigest);
-  if (lowPriorityDigest.length > 0) {
-    for (const channel of reminderChannels) {
-      const digestTaskId = `digest:${today}`;
-      const digestKey = `${userId}:${digestTaskId}:${channel}:${utcDate(scheduledFor)}:${window.label}`;
-      if (recentKeys.has(digestKey)) {
-        suppressions.push({
-          channel,
-          task_id: digestTaskId,
-          plant_id: null,
-          reason: "low_priority_digest_duplicate",
-        });
-        channelStats[channel].suppressed += 1;
-        continue;
+    if (eventAccepted) {
+      dailyEventCount += 1;
+      lastLiveEventAt = now;
+      if (plantId) {
+        perPlantCounts.set(plantId, (perPlantCounts.get(plantId) ?? 0) + 1);
+        if (escalation) {
+          escalationsPerPlant.set(
+            plantId,
+            (escalationsPerPlant.get(plantId) ?? 0) + 1,
+          );
+        }
       }
-      recentKeys.add(digestKey);
-      candidates.push({
-        taskId: digestTaskId,
-        plantId: null,
-        plantName: "Garden",
-        channel,
-        priority: "low",
-        dueDate: today,
-        isWatering: false,
-        isEscalation: false,
-        title: "Low-priority care digest",
-        message: `${lowPriorityDigest.length} low-priority care actions grouped in one digest.`,
-        idempotencyKey: digestKey,
-        scheduledFor,
-        payload: {
-          subject: "BloomPilot: low-priority care digest",
-          title: "Low-priority care digest",
-          message: `${lowPriorityDigest.length} low-priority care actions are grouped for this window.`,
-          items: lowPriorityDigest.map((item) => `${item.title} - ${item.plant_name}`),
-        },
-      });
     }
   }
 
-  const db = getDatabase();
+  if (lowPriorityActions.length > 0) {
+    const digestTaskId = `digest-${localDate}`;
+    const digestSlotMinute = getSlotMinute(
+      { priority: "low" },
+      false,
+      window.fromMin,
+      window.toMin,
+    );
+    const digestChannels = reminderChannels.filter(
+      (channel) => channel === "email" || channel === "push",
+    );
+
+    if (!activeWindow) {
+      suppressions.push({
+        channel: "all",
+        task_id: digestTaskId,
+        plant_id: null,
+        reason: "outside_reminder_window",
+      });
+      for (const channel of digestChannels) channelStats[channel].suppressed += 1;
+    } else if (!isSlotDueNow(now, timezone, window.fromMin, window.toMin, digestSlotMinute)) {
+      suppressions.push({
+        channel: "all",
+        task_id: digestTaskId,
+        plant_id: null,
+        reason: "digest_not_due_in_window_yet",
+      });
+      for (const channel of digestChannels) channelStats[channel].suppressed += 1;
+    } else if (dailyEventCount >= MAX_REMINDER_EVENTS_PER_USER_PER_DAY) {
+      suppressions.push({
+        channel: "all",
+        task_id: digestTaskId,
+        plant_id: null,
+        reason: "max_reminder_events_per_user_per_day_reached",
+      });
+      for (const channel of digestChannels) channelStats[channel].suppressed += 1;
+    } else if (minutesSince(now, lastLiveEventAt) < MIN_MINUTES_BETWEEN_LIVE_EVENTS) {
+      suppressions.push({
+        channel: "all",
+        task_id: digestTaskId,
+        plant_id: null,
+        reason: "minimum_spacing_between_live_reminders_not_elapsed",
+      });
+      for (const channel of digestChannels) channelStats[channel].suppressed += 1;
+    } else {
+      let digestAccepted = false;
+
+      for (const channel of digestChannels) {
+        const idempotencyKey = buildIdempotencyKey({
+          userId: profile.userId,
+          taskId: digestTaskId,
+          channel,
+          localDate,
+          windowLabel: window.label,
+          phase: "digest",
+        });
+
+        if (history.recentKeys.has(idempotencyKey)) {
+          suppressions.push({
+            channel,
+            task_id: digestTaskId,
+            plant_id: null,
+            reason: "idempotency_duplicate_within_dedupe_window",
+          });
+          channelStats[channel].suppressed += 1;
+          continue;
+        }
+
+        history.recentKeys.add(idempotencyKey);
+        digestAccepted = true;
+
+        candidates.push({
+          taskId: digestTaskId,
+          plantId: null,
+          plantName: "Garden",
+          channel,
+          priority: "low",
+          dueDate: localDate,
+          isEscalation: false,
+          title: "Low-priority care digest",
+          message: `${lowPriorityActions.length} low-priority care actions grouped into one digest.`,
+          idempotencyKey,
+          scheduledFor: now.toISOString(),
+          payload: {
+            subject: "BloomPilot: low-priority care digest",
+            title: "Low-priority care digest",
+            message: `${lowPriorityActions.length} low-priority care actions are grouped for this window.`,
+            items: lowPriorityActions.map(
+              (item) => `${item.title} - ${item.plant_name}`,
+            ),
+          },
+        });
+      }
+
+      if (digestAccepted) {
+        dailyEventCount += 1;
+        lastLiveEventAt = now;
+      }
+    }
+  }
+
+  const database = getDatabase();
   const runId = crypto.randomUUID();
   const createdAt = nowIso();
   const deliveries: ReminderDelivery[] = [];
   const persistedRows: ReminderDeliveryRow[] = [];
 
-  const pushSubscriptions = db
+  const pushSubscriptions = database
     .prepare(
       `
       SELECT endpoint, p256dh, auth
@@ -452,37 +850,61 @@ export async function runReminderSweep(trigger = "manual") {
       WHERE user_id = ? AND active = 1
       `,
     )
-    .all(userId) as SubscriptionRow[];
+    .all(profile.userId) as SubscriptionRow[];
 
   for (const candidate of candidates) {
+    if (candidate.channel === "push" && pushSubscriptions.length === 0) {
+      channelStats.push.suppressed += 1;
+      suppressions.push({
+        channel: "push",
+        task_id: candidate.taskId,
+        plant_id: candidate.plantId,
+        reason: "no_active_push_subscription",
+      });
+      continue;
+    }
+
+    if (candidate.channel === "telegram" && !profile.telegramChatId) {
+      channelStats.telegram.suppressed += 1;
+      suppressions.push({
+        channel: "telegram",
+        task_id: candidate.taskId,
+        plant_id: candidate.plantId,
+        reason: "missing_telegram_connection",
+      });
+      continue;
+    }
+
     let result: ReminderSendResult;
+
     if (candidate.channel === "email") {
       result = await sendEmailReminder({
-        to: session.email,
+        to: profile.email,
         payload: candidate.payload,
       });
     } else if (candidate.channel === "push") {
-      if (pushSubscriptions.length === 0) {
-        result = {
-          status: "failed",
-          error_code: "no_active_push_subscriptions",
-          error_message: "No active browser push subscription found.",
-        };
-      } else {
-        const pushResults = await Promise.all(
-          pushSubscriptions.map((subscription) =>
-            sendWebPushReminder({
-              subscription: subscription as PushSubscriptionRecord,
-              payload: candidate.payload,
-            }),
-          ),
-        );
-        const success = pushResults.find((entry) => entry.status === "sent");
-        result = success ?? pushResults[0];
+      const pushResults = await Promise.all(
+        pushSubscriptions.map(async (subscription) => ({
+          subscription,
+          result: await sendWebPushReminder({
+            subscription: subscription as PushSubscriptionRecord,
+            payload: candidate.payload,
+          }),
+        })),
+      );
+      for (const entry of pushResults) {
+        if (entry.result.error_code === "push_subscription_expired") {
+          await deactivatePushSubscription({
+            userId: profile.userId,
+            endpoint: entry.subscription.endpoint,
+          });
+        }
       }
+      const success = pushResults.find((entry) => entry.result.status === "sent");
+      result = (success ?? pushResults[0]).result;
     } else {
-      result = await queueWhatsAppReminder({
-        toNumber: session.whatsappNumber ?? null,
+      result = await sendTelegramNotification({
+        chatId: profile.telegramChatId,
         payload: candidate.payload,
       });
     }
@@ -493,6 +915,7 @@ export async function runReminderSweep(trigger = "manual") {
 
     const deliveryId = crypto.randomUUID();
     const status = result.status;
+
     deliveries.push({
       id: deliveryId,
       channel: candidate.channel,
@@ -501,12 +924,14 @@ export async function runReminderSweep(trigger = "manual") {
       preview: candidate.message,
       scheduledWindow: window.label,
       items: candidate.payload.items,
+      errorCode: result.error_code ?? null,
+      errorMessage: result.error_message ?? null,
     });
 
     persistedRows.push({
       id: deliveryId,
       run_id: runId,
-      user_id: userId,
+      user_id: profile.userId,
       task_id: candidate.taskId,
       plant_id: candidate.plantId,
       channel: candidate.channel,
@@ -523,15 +948,15 @@ export async function runReminderSweep(trigger = "manual") {
   }
 
   const sentCount =
-    channelStats.email.sent + channelStats.push.sent + channelStats.whatsapp.sent;
+    channelStats.email.sent + channelStats.push.sent + channelStats.telegram.sent;
   const queuedCount =
-    channelStats.email.queued + channelStats.push.queued + channelStats.whatsapp.queued;
+    channelStats.email.queued + channelStats.push.queued + channelStats.telegram.queued;
   const failedCount =
-    channelStats.email.failed + channelStats.push.failed + channelStats.whatsapp.failed;
+    channelStats.email.failed + channelStats.push.failed + channelStats.telegram.failed;
   const suppressedCount =
     channelStats.email.suppressed +
     channelStats.push.suppressed +
-    channelStats.whatsapp.suppressed;
+    channelStats.telegram.suppressed;
 
   const payload: ReminderRunPayload = {
     headline:
@@ -546,10 +971,16 @@ export async function runReminderSweep(trigger = "manual") {
     urgentCount: plan.today_actions.filter((item) => item.priority === "high").length,
     deliveries,
     notes: [
+      `Timezone: ${timezone}`,
       `Window: ${window.label}`,
+      `Window active now: ${activeWindow ? "yes" : "no"}`,
+      `Reminder mode: ${reminderMode}`,
+      `Channel order: ${reminderOrder}`,
+      `Caps: ${MAX_REMINDERS_PER_PLANT_PER_DAY}/plant/day, ${MAX_ESCALATIONS_PER_PLANT_PER_DAY} escalation/plant/day, ${MAX_REMINDER_EVENTS_PER_USER_PER_DAY} events/user/day`,
+      `Minimum spacing: ${MIN_MINUTES_BETWEEN_LIVE_EVENTS} minutes`,
       `Suppressed: ${suppressedCount}`,
       `Failed: ${failedCount}`,
-      `Queued (WhatsApp deferred): ${queuedCount}`,
+      `Queued: ${queuedCount}`,
     ],
     sent_count: sentCount,
     queued_count: queuedCount,
@@ -559,17 +990,15 @@ export async function runReminderSweep(trigger = "manual") {
     suppression_reasons: suppressions,
   };
 
-  withTransaction((database) => {
-    database
-      .prepare(
-        `
-        INSERT INTO reminder_runs (id, user_id, trigger, created_at, payload_json)
-        VALUES (?, ?, ?, ?, ?)
-        `,
-      )
-      .run(runId, userId, trigger, createdAt, JSON.stringify(payload));
+  withTransaction((db) => {
+    db.prepare(
+      `
+      INSERT INTO reminder_runs (id, user_id, trigger, created_at, payload_json)
+      VALUES (?, ?, ?, ?, ?)
+      `,
+    ).run(runId, profile.userId, trigger, createdAt, JSON.stringify(payload));
 
-    const insertDelivery = database.prepare(
+    const insertDelivery = db.prepare(
       `
       INSERT INTO reminder_deliveries (
         id, run_id, user_id, task_id, plant_id, channel, status, scheduled_for,
@@ -609,6 +1038,37 @@ export async function runReminderSweep(trigger = "manual") {
   } satisfies StoredReminderRun;
 }
 
+export async function runReminderSweep(trigger = "manual") {
+  const session = await readSession();
+  if (!session) return null;
+
+  const userId = await getCurrentWorkspaceUserId();
+  if (!userId) return null;
+
+  const profile =
+    readReminderUserProfile(userId) ??
+    ({
+      userId,
+      email: session.email,
+      reminderWindow: session.reminderWindow,
+      channels: session.channels,
+      telegramChatId: session.telegramChatId ?? null,
+      timezone: session.timezone ?? null,
+      onboarded: session.onboarded,
+    } satisfies ReminderUserProfile);
+
+  return runReminderSweepForProfile(profile, trigger);
+}
+
+export async function runReminderSweepForUserId(
+  userId: number,
+  trigger = "cron",
+) {
+  const profile = readReminderUserProfile(userId);
+  if (!profile) return null;
+  return runReminderSweepForProfile(profile, trigger);
+}
+
 export async function readLatestReminderRun() {
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) return null;
@@ -629,11 +1089,75 @@ export async function readLatestReminderRun() {
   if (!row) return null;
 
   try {
+    const raw = JSON.parse(row.payload_json) as Record<string, unknown>;
+    const rawDeliveries = Array.isArray(raw.deliveries) ? raw.deliveries : [];
+    const deliveries: ReminderDelivery[] = rawDeliveries
+      .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
+      .map((delivery) => ({
+        id: typeof delivery.id === "string" ? delivery.id : crypto.randomUUID(),
+        channel:
+          delivery.channel === "push" || delivery.channel === "telegram"
+            ? delivery.channel
+            : "email",
+        status:
+          delivery.status === "failed" || delivery.status === "queued"
+            ? delivery.status
+            : "sent",
+        title: typeof delivery.title === "string" ? delivery.title : "Plant care reminder",
+        preview: typeof delivery.preview === "string" ? delivery.preview : "A plant-care task needs attention.",
+        scheduledWindow:
+          typeof delivery.scheduledWindow === "string" ? delivery.scheduledWindow : "Your reminder window",
+        items: Array.isArray(delivery.items)
+          ? delivery.items.filter((item): item is string => typeof item === "string")
+          : [],
+        errorCode: typeof delivery.errorCode === "string" ? delivery.errorCode : null,
+        errorMessage: typeof delivery.errorMessage === "string" ? delivery.errorMessage : null,
+      }));
+
+    const rawChannelStats = raw.channel_stats && typeof raw.channel_stats === "object"
+      ? raw.channel_stats as Partial<Record<ReminderChannel, Partial<ChannelStats>>>
+      : {};
+    const channelStats = initChannelStats();
+    for (const channel of ["email", "push", "telegram"] as const) {
+      const stats = rawChannelStats[channel];
+      if (!stats) continue;
+      channelStats[channel] = {
+        sent: typeof stats.sent === "number" ? stats.sent : 0,
+        queued: typeof stats.queued === "number" ? stats.queued : 0,
+        failed: typeof stats.failed === "number" ? stats.failed : 0,
+        suppressed: typeof stats.suppressed === "number" ? stats.suppressed : 0,
+      };
+    }
+
     return {
       id: row.id,
       trigger: row.trigger,
       createdAt: row.created_at,
-      payload: JSON.parse(row.payload_json) as ReminderRunPayload,
+      payload: {
+        headline: typeof raw.headline === "string" ? raw.headline : "Reminder check completed.",
+        summary: typeof raw.summary === "string" ? raw.summary : "No reminder summary is available.",
+        deliveryCount: typeof raw.deliveryCount === "number" ? raw.deliveryCount : deliveries.length,
+        urgentCount: typeof raw.urgentCount === "number" ? raw.urgentCount : 0,
+        deliveries,
+        notes: Array.isArray(raw.notes)
+          ? raw.notes.filter((note): note is string => typeof note === "string")
+          : [],
+        sent_count: typeof raw.sent_count === "number" ? raw.sent_count : 0,
+        queued_count: typeof raw.queued_count === "number" ? raw.queued_count : 0,
+        suppressed_count: typeof raw.suppressed_count === "number" ? raw.suppressed_count : 0,
+        failed_count: typeof raw.failed_count === "number" ? raw.failed_count : 0,
+        channel_stats: channelStats,
+        suppression_reasons: Array.isArray(raw.suppression_reasons)
+          ? raw.suppression_reasons.filter(
+              (item): item is ReminderSuppression =>
+                Boolean(item) &&
+                typeof item === "object" &&
+                typeof (item as Record<string, unknown>).channel === "string" &&
+                typeof (item as Record<string, unknown>).task_id === "string" &&
+                typeof (item as Record<string, unknown>).reason === "string",
+            )
+          : [],
+      },
     } satisfies StoredReminderRun;
   } catch {
     return null;

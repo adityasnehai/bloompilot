@@ -1,8 +1,14 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { appConfig } from "@/lib/app-config";
+import {
+  extractReminderChannels,
+  normalizeReminderChannels,
+  type ReminderChannel,
+} from "@/lib/reminder-channels";
 
-export type NotificationChannel = "email" | "push" | "whatsapp";
+export type NotificationChannel = ReminderChannel;
 export type Gender = "Woman" | "Man" | "Non-binary" | "Prefer not to say";
 
 export type DemoSession = {
@@ -18,7 +24,7 @@ export type DemoSession = {
   channels: NotificationChannel[];
   emailDailyReminder: boolean;
   emailWeeklyDigest: boolean;
-  whatsappNumber?: string;
+  telegramChatId?: string;
   timezone?: string;
   countryCode?: string;
   onboarded: boolean;
@@ -39,7 +45,7 @@ type SessionInput = {
   channels?: NotificationChannel[];
   emailDailyReminder?: boolean;
   emailWeeklyDigest?: boolean;
-  whatsappNumber?: string;
+  telegramChatId?: string;
   timezone?: string;
   countryCode?: string;
 };
@@ -48,6 +54,31 @@ const DEFAULT_LOCATION = "";
 const DEFAULT_GARDEN_TYPE = "";
 const DEFAULT_REMINDER_WINDOW = "07:00 AM - 09:00 AM";
 const DEFAULT_CHANNELS: NotificationChannel[] = ["email"];
+
+function sessionSecret() {
+  const secret = process.env.SESSION_SECRET?.trim();
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") throw new Error("SESSION_SECRET must be configured in production");
+  return "bloompilot-development-session-secret";
+}
+
+export function hashPassword(password: string) {
+  const salt = randomBytes(16).toString("hex");
+  return `scrypt:${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+export function verifyPassword(password: string, encoded: string | null | undefined) {
+  if (!encoded?.startsWith("scrypt:")) return false;
+  const [, salt, expectedHex] = encoded.split(":");
+  if (!salt || !expectedHex || !/^[0-9a-f]+$/i.test(expectedHex)) return false;
+  try {
+    const expected = Buffer.from(expectedHex, "hex");
+    const actual = scryptSync(password, salt, expected.length);
+    return timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
 
 export function deriveNameFromEmail(email: string) {
   const localPart = email.split("@")[0] ?? "gardener";
@@ -82,13 +113,13 @@ export function createDemoSession(input: SessionInput): DemoSession {
     longitude,
     gardenType: input.gardenType?.trim() || DEFAULT_GARDEN_TYPE,
     reminderWindow: input.reminderWindow?.trim() || DEFAULT_REMINDER_WINDOW,
-    channels:
-      input.channels && input.channels.length > 0
-        ? input.channels
-        : DEFAULT_CHANNELS,
+    channels: normalizeReminderChannels(
+      input.channels && input.channels.length > 0 ? input.channels : DEFAULT_CHANNELS,
+      DEFAULT_CHANNELS,
+    ),
     emailDailyReminder: input.emailDailyReminder !== false,
     emailWeeklyDigest: input.emailWeeklyDigest !== false,
-    whatsappNumber: input.whatsappNumber?.trim() || undefined,
+    telegramChatId: input.telegramChatId?.trim() || undefined,
     timezone: input.timezone?.trim() || undefined,
     countryCode: input.countryCode?.trim().toLowerCase() || undefined,
     onboarded: input.onboarded,
@@ -102,7 +133,13 @@ export function parseSessionValue(value?: string | null) {
   }
 
   try {
-    const parsed = JSON.parse(decodeURIComponent(value)) as Partial<DemoSession>;
+    const separator = value.lastIndexOf(".");
+    if (separator <= 0) return null;
+    const payload = value.slice(0, separator);
+    const signature = value.slice(separator + 1);
+    const expected = createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
+    if (signature.length !== expected.length || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
+    const parsed = JSON.parse(payload) as Partial<DemoSession>;
 
     if (!parsed.email || !parsed.name) {
       return null;
@@ -127,15 +164,13 @@ export function parseSessionValue(value?: string | null) {
         typeof parsed.longitude === "number" ? parsed.longitude : undefined,
       gardenType: parsed.gardenType,
       reminderWindow: parsed.reminderWindow,
-      channels: Array.isArray(parsed.channels)
-        ? parsed.channels.filter(
-            (channel): channel is NotificationChannel =>
-              channel === "email" || channel === "push" || channel === "whatsapp",
-          )
-        : DEFAULT_CHANNELS,
+      channels: normalizeReminderChannels(
+        extractReminderChannels(parsed.channels),
+        DEFAULT_CHANNELS,
+      ),
       emailDailyReminder: parsed.emailDailyReminder !== false,
       emailWeeklyDigest: parsed.emailWeeklyDigest !== false,
-      whatsappNumber: typeof parsed.whatsappNumber === "string" ? parsed.whatsappNumber : undefined,
+      telegramChatId: typeof parsed.telegramChatId === "string" ? parsed.telegramChatId : undefined,
       timezone: typeof parsed.timezone === "string" ? parsed.timezone : undefined,
       countryCode: typeof parsed.countryCode === "string" ? parsed.countryCode : undefined,
     });
@@ -145,7 +180,9 @@ export function parseSessionValue(value?: string | null) {
 }
 
 function serializeSession(session: DemoSession) {
-  return encodeURIComponent(JSON.stringify(session));
+  const payload = JSON.stringify(session);
+  const signature = createHmac("sha256", sessionSecret()).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
 }
 
 export async function readSession() {

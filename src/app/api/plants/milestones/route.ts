@@ -44,27 +44,24 @@ export async function POST(req: NextRequest) {
   const identity = readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  let body: { plantId: string; plantName: string; stage: Stage; note?: string };
-  try {
-    body = (await req.json()) as { plantId: string; plantName: string; stage: Stage; note?: string };
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-  const { plantId, plantName, stage, note } = body;
+  const body = await req.json().catch(() => null) as { plantId?: string; stage?: Stage; note?: string } | null;
+  const { plantId, stage, note } = body ?? {};
 
-  if (!plantId || !plantName || !STAGES.includes(stage)) {
-    return NextResponse.json({ error: "plantId, plantName, and valid stage required" }, { status: 400 });
+  if (!plantId || !stage || !STAGES.includes(stage)) {
+    return NextResponse.json({ error: "plantId and valid stage required" }, { status: 400 });
   }
 
   const db = getDatabase();
+  const plant = db.prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(plantId, identity.id) as { nickname: string } | undefined;
+  if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
   const id = randomUUID();
   const recordedAt = new Date().toISOString();
 
   db.prepare(
     `INSERT INTO plant_milestones (id, user_id, plant_id, plant_name, stage, note, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, identity.id, plantId, plantName, stage, note ?? null, recordedAt);
+  ).run(id, identity.id, plantId, plant.nickname, stage, note?.trim().slice(0, 500) || null, recordedAt);
 
-  return NextResponse.json({ milestone: { id, plantId, plantName, stage, note, recordedAt } });
+  return NextResponse.json({ milestone: { id, plantId, plantName: plant.nickname, stage, note: note?.trim().slice(0, 500) || undefined, recordedAt } });
 }
 
 export async function DELETE(req: NextRequest) {
