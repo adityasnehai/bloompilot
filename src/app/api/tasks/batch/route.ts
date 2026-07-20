@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
         };
         const eventType = eventTypeMap[task.kind];
         if (eventType) {
-          logHealthEvent(userId, plant.id, plant.nickname, eventType, `Batch ${action}: ${task.title}`, {
+          await logHealthEvent(userId, plant.id, plant.nickname, eventType, `Batch ${action}: ${task.title}`, {
             taskId: task.id,
             kind: task.kind,
             dueDate: task.dueDate,

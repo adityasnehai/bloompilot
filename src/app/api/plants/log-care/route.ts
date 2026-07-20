@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
@@ -47,19 +47,20 @@ export async function POST(request: NextRequest) {
 
   const eventType = body.eventType as HealthEventType;
   const detail = body.note?.trim() || EVENT_DETAIL[eventType];
-  const plant = getDatabase()
+  const db = await getDatabase();
+  const plant = await db
     .prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`)
     .get(body.plantId, identity.id) as { nickname: string } | undefined;
   if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
 
-  logHealthEvent(identity.id, body.plantId, plant.nickname, eventType, detail, {
+  await logHealthEvent(identity.id, body.plantId, plant.nickname, eventType, detail, {
     source: "manual",
     note: body.note ?? null,
   });
 
   // For watered events also update last_watered_at on the plant record
   if (eventType === "watered") {
-    getDatabase()
+    await db
       .prepare(`UPDATE plants SET last_watered_at = ? WHERE id = ? AND user_id = ?`)
       .run(new Date().toISOString(), body.plantId, identity.id);
   }

@@ -1,0 +1,28 @@
+name: Scheduled tasks
+
+on:
+  schedule:
+    # Reminders sweep — every hour (Vercel Hobby cron is capped at once/day, so this runs on GitHub Actions instead)
+    - cron: "0 * * * *"
+    # Alert observer — every 4 hours
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  reminders-cron:
+    if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger reminders sweep
+        run: |
+          curl -sS -f -X GET "${{ secrets.PROD_URL }}/api/reminders/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+  alerts-cron:
+    if: github.event.schedule == '0 */4 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger alert observer
+        run: |
+          curl -sS -f -X POST "${{ secrets.PROD_URL }}/api/alerts/cron" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

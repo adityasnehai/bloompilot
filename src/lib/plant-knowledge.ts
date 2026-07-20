@@ -124,7 +124,7 @@ export async function getPlantCareKnowledge(species: string): Promise<PlantKnowl
   if (!key) return emptyKnowledge();
 
   // 1. Check DB cache — returns null if missing or stale
-  const cached = getKnowledgeFromDB(key);
+  const cached = await getKnowledgeFromDB(key);
   if (cached) return speciesKnowledgeToPlantKnowledge(cached);
 
   // 2. Enrich: fetches Perenual + Trefle in parallel, stores in DB, returns result

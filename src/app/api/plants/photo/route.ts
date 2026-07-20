@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const plantId = request.nextUrl.searchParams.get("plantId");
@@ -36,9 +36,9 @@ export async function POST(request: NextRequest) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const db = getDatabase();
+  const db = await getDatabase();
 
-  const result = db
+  const result = await db
     .prepare(`UPDATE plants SET photo_blob = ?, photo_type = ? WHERE id = ? AND user_id = ?`)
     .run(bytes, file.type, plantId, identity.id);
 
@@ -54,14 +54,14 @@ export async function HEAD(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return new Response(null, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return new Response(null, { status: 404 });
 
   const plantId = request.nextUrl.searchParams.get("plantId");
   if (!plantId) return new Response(null, { status: 400 });
 
-  const db = getDatabase();
-  const row = db
+  const db = await getDatabase();
+  const row = await db
     .prepare(`SELECT 1 FROM plants WHERE id = ? AND user_id = ? AND photo_blob IS NOT NULL`)
     .get(plantId, identity.id);
 
@@ -73,14 +73,14 @@ export async function GET(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const plantId = request.nextUrl.searchParams.get("plantId");
   if (!plantId) return NextResponse.json({ error: "plantId required" }, { status: 400 });
 
-  const db = getDatabase();
-  const row = db
+  const db = await getDatabase();
+  const row = await db
     .prepare(`SELECT photo_blob, photo_type FROM plants WHERE id = ? AND user_id = ?`)
     .get(plantId, identity.id) as { photo_blob: Uint8Array | null; photo_type: string | null } | undefined;
 
@@ -99,14 +99,14 @@ export async function DELETE(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const plantId = request.nextUrl.searchParams.get("plantId");
   if (!plantId) return NextResponse.json({ error: "plantId required" }, { status: 400 });
 
-  const db = getDatabase();
-  db.prepare(`UPDATE plants SET photo_blob = NULL, photo_type = NULL WHERE id = ? AND user_id = ?`)
+  const db = await getDatabase();
+  await db.prepare(`UPDATE plants SET photo_blob = NULL, photo_type = NULL WHERE id = ? AND user_id = ?`)
     .run(plantId, identity.id);
 
   return NextResponse.json({ ok: true });

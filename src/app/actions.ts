@@ -95,7 +95,7 @@ export async function signUpAction(formData: FormData) {
   if (!name || name.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8 || password.length > 128) {
     redirect("/sign-up?error=invalid");
   }
-  if (readWorkspaceProfileByEmail(email)) {
+  if (await readWorkspaceProfileByEmail(email)) {
     redirect("/sign-in?error=exists");
   }
 
@@ -107,9 +107,10 @@ export async function signUpAction(formData: FormData) {
     onboarded: false,
   });
 
-  const userId = upsertWorkspaceProfile(nextSession);
+  const userId = await upsertWorkspaceProfile(nextSession);
   const { getDatabase } = await import("@/lib/database");
-  getDatabase().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), userId);
+  const db = await getDatabase();
+  await db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), userId);
   await writeSession(nextSession);
 
   redirect("/preferences");
@@ -124,8 +125,9 @@ export async function signInAction(formData: FormData) {
   }
 
   const { getDatabase } = await import("@/lib/database");
-  const storedProfile = readWorkspaceProfileByEmail(email);
-  const storedIdentity = getDatabase().prepare("SELECT password_hash FROM users WHERE email = ?").get(email.toLowerCase()) as { password_hash: string | null } | undefined;
+  const storedProfile = await readWorkspaceProfileByEmail(email);
+  const db = await getDatabase();
+  const storedIdentity = await db.prepare("SELECT password_hash FROM users WHERE email = ?").get(email.toLowerCase()) as { password_hash: string | null } | undefined;
   if (storedProfile && !storedIdentity?.password_hash) {
     redirect("/sign-in?error=password_reset_required");
   }
@@ -153,7 +155,7 @@ export async function signInAction(formData: FormData) {
   });
 
   await writeSession(nextSession);
-  upsertWorkspaceProfile(nextSession);
+  await upsertWorkspaceProfile(nextSession);
 
   redirect(nextSession.onboarded ? "/dashboard" : "/preferences");
 }
@@ -161,7 +163,7 @@ export async function signInAction(formData: FormData) {
 export async function requestPasswordResetAction(formData: FormData) {
   const email = formData.get("email")?.toString().trim().toLowerCase() ?? "";
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    const request = issuePasswordResetToken(email);
+    const request = await issuePasswordResetToken(email);
     if (request) await sendPasswordResetEmail({ to: request.email, name: request.name, token: request.token });
   }
 
@@ -178,7 +180,7 @@ export async function completePasswordResetAction(formData: FormData) {
     redirect(`/reset-password?error=invalid&token=${encodeURIComponent(token)}`);
   }
 
-  if (!resetPassword(token, password)) {
+  if (!(await resetPassword(token, password))) {
     redirect("/reset-password?error=expired");
   }
 
@@ -224,8 +226,8 @@ export async function completePreferencesAction(formData: FormData) {
   });
 
   await writeSession(nextSession);
-  const userId = upsertWorkspaceProfile(nextSession, session.email);
-  clearWorkspaceDerivedCareData(userId);
+  const userId = await upsertWorkspaceProfile(nextSession, session.email);
+  await clearWorkspaceDerivedCareData(userId);
 
   redirect("/plant-setup");
 }
@@ -247,8 +249,8 @@ export async function skipOnboardingAction() {
   });
 
   await writeSession(nextSession);
-  const userId = upsertWorkspaceProfile(nextSession, session.email);
-  clearWorkspaceDerivedCareData(userId);
+  const userId = await upsertWorkspaceProfile(nextSession, session.email);
+  await clearWorkspaceDerivedCareData(userId);
 
   redirect("/dashboard");
 }
@@ -266,8 +268,8 @@ export async function completePlantSetupAction() {
   });
 
   await writeSession(nextSession);
-  const userId = upsertWorkspaceProfile(nextSession, session.email);
-  clearWorkspaceDerivedCareData(userId);
+  const userId = await upsertWorkspaceProfile(nextSession, session.email);
+  await clearWorkspaceDerivedCareData(userId);
 
   redirect("/agent");
 }
@@ -300,7 +302,7 @@ export async function updateProfileAction(formData: FormData) {
   const timezone = formData.get("timezone")?.toString().trim() || session.timezone;
   const countryCode = formData.get("countryCode")?.toString().trim().toLowerCase() || session.countryCode;
 
-  if (email.toLowerCase() !== session.email.toLowerCase() && readWorkspaceProfileByEmail(email)) {
+  if (email.toLowerCase() !== session.email.toLowerCase() && await readWorkspaceProfileByEmail(email)) {
     redirect("/settings?error=email_exists");
   }
 
@@ -324,7 +326,7 @@ export async function updateProfileAction(formData: FormData) {
   });
 
   await writeSession(nextSession);
-  upsertWorkspaceProfile(nextSession, session.email);
+  await upsertWorkspaceProfile(nextSession, session.email);
 
   redirect("/settings?saved=1");
 }

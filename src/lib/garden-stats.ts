@@ -44,25 +44,25 @@ type DateCountRow = { date: string; count: number };
 type TaskRow = { total: number; done: number };
 type JoinRow = { joined_at: string };
 
-export function getGardenStats(userId: number): GardenStats {
-  const db = getDatabase();
+export async function getGardenStats(userId: number): Promise<GardenStats> {
+  const db = await getDatabase();
 
-  const plantCount = (db.prepare(`SELECT COUNT(*) as count FROM plants WHERE user_id = ?`).get(userId) as CountRow).count;
+  const plantCount = (await db.prepare(`SELECT COUNT(*) as count FROM plants WHERE user_id = ?`).get(userId) as CountRow).count;
 
-  const waterCount = (db.prepare(
+  const waterCount = (await db.prepare(
     `SELECT COUNT(*) as count FROM plant_health_events WHERE user_id = ? AND event_type = 'watered'`,
   ).get(userId) as CountRow).count;
 
-  const diagnosisCount = (db.prepare(
+  const diagnosisCount = (await db.prepare(
     `SELECT COUNT(*) as count FROM diagnosis_runs WHERE user_id = ?`,
   ).get(userId) as CountRow).count;
 
-  const skipCount = (db.prepare(
+  const skipCount = (await db.prepare(
     `SELECT COUNT(*) as count FROM plant_health_events WHERE user_id = ? AND event_type = 'water_skipped'`,
   ).get(userId) as CountRow).count;
 
   // Care streak: consecutive days with at least one health event ending today or yesterday
-  const eventDays = db.prepare(
+  const eventDays = await db.prepare(
     `SELECT DISTINCT date(created_at) as day FROM plant_health_events WHERE user_id = ? ORDER BY day DESC`,
   ).all(userId) as { day: string }[];
 
@@ -98,13 +98,13 @@ export function getGardenStats(userId: number): GardenStats {
   }
 
   // Most cared plant
-  const mostCared = db.prepare(
+  const mostCared = await db.prepare(
     `SELECT plant_name as name, COUNT(*) as count FROM plant_health_events WHERE user_id = ?
      GROUP BY plant_id ORDER BY count DESC LIMIT 1`,
   ).get(userId) as NameCountRow | undefined;
 
   // Last 14 days activity
-  const activityDaysRaw = db.prepare(
+  const activityDaysRaw = await db.prepare(
     `SELECT date(created_at) as date, COUNT(*) as count
      FROM plant_health_events WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-14 days')
      GROUP BY date ORDER BY date ASC`,
@@ -118,7 +118,7 @@ export function getGardenStats(userId: number): GardenStats {
   });
 
   // Task completion rate (last 30 days)
-  const taskStats = db.prepare(
+  const taskStats = await db.prepare(
     `SELECT COUNT(*) as total,
             SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done
      FROM care_tasks WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-30 days')`,
@@ -129,7 +129,7 @@ export function getGardenStats(userId: number): GardenStats {
     : 0;
 
   // Days since joined
-  const joinRow = db.prepare(`SELECT joined_at FROM users WHERE id = ?`).get(userId) as JoinRow | undefined;
+  const joinRow = await db.prepare(`SELECT joined_at FROM users WHERE id = ?`).get(userId) as JoinRow | undefined;
   const joinedDaysAgo = joinRow
     ? Math.max(0, Math.round((Date.now() - new Date(joinRow.joined_at).getTime()) / 86400000))
     : 0;
@@ -151,7 +151,7 @@ export function getGardenStats(userId: number): GardenStats {
     skip_count: number;
     last_event_at: string | null;
   };
-  const plantRows = db.prepare(
+  const plantRows = await db.prepare(
     `SELECT p.id as plant_id, p.nickname as plant_name, COALESCE(p.species, '') as species,
             COALESCE(SUM(CASE WHEN e.event_type = 'watered' THEN 1 ELSE 0 END), 0) as water_count,
             COALESCE(SUM(CASE WHEN e.event_type = 'water_skipped' THEN 1 ELSE 0 END), 0) as skip_count,
@@ -163,7 +163,7 @@ export function getGardenStats(userId: number): GardenStats {
   ).all(userId) as PlantHealthSummaryRow[];
 
   type DiagnosisByPlantRow = { plant_id: string; count: number };
-  const diagByPlant = db.prepare(
+  const diagByPlant = await db.prepare(
     `SELECT plant_id, COUNT(*) as count FROM diagnosis_runs WHERE user_id = ? GROUP BY plant_id`,
   ).all(userId) as DiagnosisByPlantRow[];
   const diagByPlantMap = new Map(diagByPlant.map((r) => [r.plant_id, r.count]));
@@ -180,7 +180,7 @@ export function getGardenStats(userId: number): GardenStats {
 
   // Diagnosis trend (last 6 months)
   type MonthCountRow = { month: string; count: number };
-  const diagnosisTrendRaw = db.prepare(
+  const diagnosisTrendRaw = await db.prepare(
     `SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as count
      FROM diagnosis_runs WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-6 months')
      GROUP BY month ORDER BY month ASC`,
@@ -196,7 +196,7 @@ export function getGardenStats(userId: number): GardenStats {
 
   // Task completion by kind (last 30 days)
   type TaskKindRow = { kind: string; total: number; done: number };
-  const taskKindRows = db.prepare(
+  const taskKindRows = await db.prepare(
     `SELECT kind, COUNT(*) as total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) as done
      FROM care_tasks WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-30 days')
      GROUP BY kind`,

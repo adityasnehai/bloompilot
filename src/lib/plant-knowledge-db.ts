@@ -97,12 +97,12 @@ export function normalizeSpeciesKey(species: string): string {
 
 const STALE_DAYS = 90;
 
-export function getKnowledgeFromDB(species: string): SpeciesKnowledge | null {
-  const db = getDatabase();
+export async function getKnowledgeFromDB(species: string): Promise<SpeciesKnowledge | null> {
+  const db = await getDatabase();
   const key = normalizeSpeciesKey(species);
   if (!key) return null;
 
-  const row = db
+  const row = await db
     .prepare(`SELECT * FROM plant_species_knowledge WHERE species_key = ?`)
     .get(key) as KnowledgeRow | undefined;
 
@@ -114,11 +114,11 @@ export function getKnowledgeFromDB(species: string): SpeciesKnowledge | null {
   return rowToKnowledge(row);
 }
 
-export function upsertKnowledge(k: Omit<SpeciesKnowledge, "id">): SpeciesKnowledge {
-  const db = getDatabase();
+export async function upsertKnowledge(k: Omit<SpeciesKnowledge, "id">): Promise<SpeciesKnowledge> {
+  const db = await getDatabase();
   const id = randomUUID();
 
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO plant_species_knowledge (
       id, species_key, scientific_name, common_names,
       watering_baseline, watering_days_min, watering_days_max,
@@ -181,17 +181,17 @@ export function upsertKnowledge(k: Omit<SpeciesKnowledge, "id">): SpeciesKnowled
   return { id, ...k };
 }
 
-export function getStaleKnowledgeKeys(limit = 50): string[] {
-  const db = getDatabase();
+export async function getStaleKnowledgeKeys(limit = 50): Promise<string[]> {
+  const db = await getDatabase();
   const cutoff = new Date(Date.now() - STALE_DAYS * 86400000).toISOString();
-  const rows = db
+  const rows = await db
     .prepare(`SELECT species_key FROM plant_species_knowledge WHERE fetched_at < ? AND confidence != 'seeded' LIMIT ?`)
     .all(cutoff, limit) as { species_key: string }[];
   return rows.map((r) => r.species_key);
 }
 
-export function getAllKnowledgeSpeciesKeys(): string[] {
-  const db = getDatabase();
-  const rows = db.prepare(`SELECT species_key FROM plant_species_knowledge`).all() as { species_key: string }[];
+export async function getAllKnowledgeSpeciesKeys(): Promise<string[]> {
+  const db = await getDatabase();
+  const rows = await db.prepare(`SELECT species_key FROM plant_species_knowledge`).all() as { species_key: string }[];
   return rows.map((r) => r.species_key);
 }

@@ -13,13 +13,13 @@ export async function GET(
 ) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { id } = await context.params;
 
-  const db = getDatabase();
-  const row = db
+  const db = await getDatabase();
+  const row = await db
     .prepare(`SELECT id, generated_at, plan_json FROM care_plans WHERE id = ? AND user_id = ?`)
     .get(id, identity.id) as PlanRow | undefined;
 

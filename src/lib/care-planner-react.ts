@@ -176,7 +176,7 @@ async function executeTool(
 ): Promise<unknown> {
   if (name === "get_health_history") {
     const plantId = args.plant_id as string;
-    const summary = getPlantHealthSummary(userId, plantId);
+    const summary = await getPlantHealthSummary(userId, plantId);
     if (!summary) {
       return { available: false, message: "No health history recorded yet for this plant." };
     }
@@ -207,7 +207,7 @@ async function executeTool(
 
   if (name === "get_action_feedback") {
     const plantId = args.plant_id as string;
-    const summary = getPlantFeedbackSummary(userId, plantId);
+    const summary = await getPlantFeedbackSummary(userId, plantId);
     if (summary.positiveCount === 0 && summary.negativeCount === 0) {
       return { available: false, message: "No feedback recorded yet for this plant." };
     }
@@ -243,8 +243,8 @@ async function executeTool(
     const adjustedInterval = Math.max(1, Math.min(30, Math.round(newInterval / modifier)));
 
     try {
-      const db = getDatabase();
-      db.prepare(`UPDATE plants SET watering_interval_days = ? WHERE id = ? AND user_id = ?`)
+      const db = await getDatabase();
+      await db.prepare(`UPDATE plants SET watering_interval_days = ? WHERE id = ? AND user_id = ?`)
         .run(adjustedInterval, plantId, userId);
 
       return {

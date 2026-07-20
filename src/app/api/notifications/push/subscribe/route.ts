@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }

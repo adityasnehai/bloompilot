@@ -229,7 +229,7 @@ function merge(
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export async function enrichSpecies(species: string): Promise<SpeciesKnowledge> {
-  const cached = getKnowledgeFromDB(species);
+  const cached = await getKnowledgeFromDB(species);
   if (cached) return cached;
 
   const [perenual, trefle] = await Promise.allSettled([
@@ -646,9 +646,9 @@ function buildSeed(): Record<string, SeedEntry> {
 export async function seedKnowledgeBase(): Promise<number> {
   let seeded = 0;
   for (const [key, entry] of Object.entries(SEED_KNOWLEDGE)) {
-    const existing = getKnowledgeFromDB(key);
+    const existing = await getKnowledgeFromDB(key);
     if (!existing) {
-      upsertKnowledge(entry);
+      await upsertKnowledge(entry);
       seeded++;
     }
   }

@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
@@ -99,9 +99,9 @@ export async function POST(request: NextRequest) {
   });
   if (messages.length !== body.messages.length) return NextResponse.json({ error: "Invalid message format" }, { status: 400 });
 
-  const db = getDatabase();
+  const db = await getDatabase();
   type UserRow = { name: string; location: string; garden_type: string; latitude: number | null; longitude: number | null };
-  const userRow = db.prepare(`SELECT name, location, garden_type, latitude, longitude FROM users WHERE id = ?`)
+  const userRow = await db.prepare(`SELECT name, location, garden_type, latitude, longitude FROM users WHERE id = ?`)
     .get(identity.id) as UserRow | undefined;
 
   const [gardenState, plan, healthSummaries, healthEvents, diagnoses, latestReminder, reminderReadiness] = await Promise.all([
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
   ]);
 
   type TaskRow = { id: string; title: string; kind: string; plant_id: string; status: string; due_date: string; completed_at: string | null };
-  const taskRows = db.prepare(
+  const taskRows = await db.prepare(
     `SELECT id, title, kind, plant_id, status, due_date, completed_at
      FROM care_tasks WHERE user_id = ?
      ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, datetime(due_date) ASC
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
   ).all(identity.id) as TaskRow[];
 
   type ActivityRow = { id: string; type: string; title: string; detail: string; created_at: string; plant_id: string | null };
-  const activityRows = db.prepare(
+  const activityRows = await db.prepare(
     `SELECT id, type, title, detail, created_at, plant_id
      FROM activities WHERE user_id = ? ORDER BY datetime(created_at) DESC LIMIT 60`,
   ).all(identity.id) as ActivityRow[];

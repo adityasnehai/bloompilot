@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   if (searchParams.get("list") === "1") {
-    const keys = getAllKnowledgeSpeciesKeys();
+    const keys = await getAllKnowledgeSpeciesKeys();
     return NextResponse.json({ count: keys.length, species: keys });
   }
 
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "species param required" }, { status: 400 });
   }
 
-  const stored = getKnowledgeFromDB(species);
+  const stored = await getKnowledgeFromDB(species);
   if (!stored) {
     return NextResponse.json({ found: false, species, knowledge: null });
   }
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   const action = searchParams.get("action") ?? "enrich";
 
   if (action === "refresh") {
-    const stale = getStaleKnowledgeKeys(50);
+    const stale = await getStaleKnowledgeKeys(50);
     if (stale.length === 0) {
       return NextResponse.json({ refreshed: 0, message: "No stale records" });
     }

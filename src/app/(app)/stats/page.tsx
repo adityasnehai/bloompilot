@@ -144,10 +144,10 @@ export default async function StatsPage() {
   const session = await requireSession();
   if (!session.onboarded) redirect("/onboarding");
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) redirect("/onboarding");
 
-  const stats = getGardenStats(identity.id);
+  const stats = await getGardenStats(identity.id);
 
   const focusPlants = stats.perPlantHealth.filter((plant) => plant.skipCount > 0).slice(0, 3);
 

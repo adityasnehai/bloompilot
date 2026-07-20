@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
@@ -30,7 +30,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "plantId required" }, { status: 400 });
   }
 
-  const rows = getDatabase()
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT id, plant_id, issue, category, severity, confidence, summary,
               treatment_json, follow_up, created_at

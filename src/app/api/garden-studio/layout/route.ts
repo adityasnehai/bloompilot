@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) return NextResponse.json({ plants: [], gardenType }, { status: 200 });
 
-  const layout = getStudioLayout(userId, gardenType);
+  const layout = await getStudioLayout(userId, gardenType);
   if (layout) {
     return NextResponse.json({
       gardenType,
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   // Seed only plants whose saved placement matches this studio environment.
   const initialPlants = createInitialStudioLayout((await readGardenState()).plants, gardenType);
   if (initialPlants.length > 0) {
-    const savedAt = saveStudioLayout(userId, gardenType, initialPlants);
+    const savedAt = await saveStudioLayout(userId, gardenType, initialPlants);
     return NextResponse.json({
       gardenType,
       plants: initialPlants,
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Layout contains an invalid or duplicate plant" }, { status: 400 });
   }
 
-  const savedAt = saveStudioLayout(userId, gardenType, plants);
+  const savedAt = await saveStudioLayout(userId, gardenType, plants);
 
   return NextResponse.json({ ok: true, saved: plants.length, savedAt });
 }

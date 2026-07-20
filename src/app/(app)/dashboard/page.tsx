@@ -38,16 +38,16 @@ export default async function DashboardPage() {
     redirect("/onboarding");
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
-  const userId = identity?.id ?? upsertWorkspaceProfile(session);
-  let context = readLatestContextSnapshot(userId);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
+  const userId = identity?.id ?? (await upsertWorkspaceProfile(session));
+  let context = await readLatestContextSnapshot(userId);
 
   if (isGardenContextSnapshotStale(context)) {
     context = await buildGardenContext(userId);
   }
 
   const activeContext = context ?? (await buildGardenContext(userId));
-  let carePlan = readLatestCarePlan(userId);
+  let carePlan = await readLatestCarePlan(userId);
 
   if (!isCarePlanUsable(carePlan, activeContext.context_id) || isCarePlanReasoningStale(carePlan)) {
     try {
@@ -83,7 +83,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const alerts = readRecentAlerts(userId, 10);
+  const alerts = await readRecentAlerts(userId, 10);
   const gardenState = await readGardenState();
   const reminderReadiness = await readCurrentReminderChannelReadiness();
 

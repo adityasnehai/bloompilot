@@ -116,7 +116,7 @@ const CareAgentState = Annotation.Root({
 type CareAgentStateType = typeof CareAgentState.State;
 
 async function contextBuilderAgent(state: CareAgentStateType) {
-  const cached = readLatestContextSnapshot(state.userId);
+  const cached = await readLatestContextSnapshot(state.userId);
   const context = isGardenContextSnapshotStale(cached) ? await buildGardenContext(state.userId) : cached!;
   emitProgress(state.agentRunId, "context");
   return {
@@ -387,7 +387,7 @@ async function reminderAgent(state: CareAgentStateType) {
 
 async function dashboardAgent(state: CareAgentStateType) {
   const context = requireContext(state);
-  const carePlan = buildCarePlanOutput({
+  const carePlan = await buildCarePlanOutput({
     userId: state.userId,
     context,
     agentRunId: state.agentRunId,
@@ -487,7 +487,7 @@ export async function runCarePlanAgents(
       agent_traces: result.traces,
     };
 
-    saveCarePlan(input.userId, carePlan);
+    await saveCarePlan(input.userId, carePlan);
 
     // run alert observer after every care plan — fires notifications for high-urgency anomalies
     runAlertObserver(input.userId, input.userEmail).catch(() => {

@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const users = readAllActiveUsers();
+  const users = await readAllActiveUsers();
 
   const results = await Promise.allSettled(
     users.map((user) => runAlertObserver(user.id, user.email)),

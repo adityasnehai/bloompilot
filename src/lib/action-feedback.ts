@@ -32,7 +32,7 @@ export type PlantFeedbackSummary = {
   positiveActionTypes: string[];
 };
 
-export function logActionFeedback(
+export async function logActionFeedback(
   userId: number,
   plantId: string | null,
   plantName: string,
@@ -40,8 +40,8 @@ export function logActionFeedback(
   actionTitle: string,
   feedback: FeedbackValue,
 ) {
-  const db = getDatabase();
-  db.prepare(
+  const db = await getDatabase();
+  await db.prepare(
     `INSERT INTO action_feedback (id, user_id, plant_id, plant_name, action_type, action_title, feedback, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -56,12 +56,12 @@ export function logActionFeedback(
   );
 }
 
-export function getPlantFeedbackSummary(
+export async function getPlantFeedbackSummary(
   userId: number,
   plantId: string,
-): PlantFeedbackSummary {
-  const db = getDatabase();
-  const rows = db
+): Promise<PlantFeedbackSummary> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM action_feedback WHERE user_id = ? AND plant_id = ?
        ORDER BY datetime(created_at) DESC LIMIT 30`,
@@ -80,11 +80,11 @@ export function getPlantFeedbackSummary(
   };
 }
 
-export function getAllFeedbackSummaries(userId: number): PlantFeedbackSummary[] {
-  const db = getDatabase();
-  const plantIds = db
+export async function getAllFeedbackSummaries(userId: number): Promise<PlantFeedbackSummary[]> {
+  const db = await getDatabase();
+  const plantIds = await db
     .prepare(`SELECT DISTINCT plant_id FROM action_feedback WHERE user_id = ? AND plant_id IS NOT NULL`)
     .all(userId) as { plant_id: string }[];
 
-  return plantIds.map(({ plant_id }) => getPlantFeedbackSummary(userId, plant_id));
+  return Promise.all(plantIds.map(({ plant_id }) => getPlantFeedbackSummary(userId, plant_id)));
 }

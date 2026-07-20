@@ -17,16 +17,16 @@ function csvRow(values: (string | number | null | undefined)[]) {
 export async function GET(req: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { searchParams } = new URL(req.url);
   const format = searchParams.get("format") ?? "csv";
 
-  const db = getDatabase();
+  const db = await getDatabase();
 
   type PlanRow = { id: string; generated_at: string; plan_json: string };
-  const plans = db
+  const plans = await db
     .prepare(`SELECT id, generated_at, plan_json FROM care_plans WHERE user_id = ? ORDER BY datetime(generated_at) DESC LIMIT 30`)
     .all(identity.id) as PlanRow[];
 

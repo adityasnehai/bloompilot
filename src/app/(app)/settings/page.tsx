@@ -30,9 +30,9 @@ export default async function SettingsPage({
   searchParams?: Promise<{ saved?: string }>;
 }) {
   const session = await requireSession();
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   const telegramConnectUrl = identity ? createTelegramConnectLink(identity.id) : null;
-  const telegramChatId = identity ? readTelegramChatId(identity.id) : null;
+  const telegramChatId = identity ? await readTelegramChatId(identity.id) : null;
   const resolvedSearchParams = await searchParams;
   const saved = resolvedSearchParams?.saved === "1";
 

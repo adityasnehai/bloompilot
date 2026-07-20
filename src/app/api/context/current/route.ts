@@ -18,13 +18,13 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
 
   if (!identity) {
     return NextResponse.json({ context: null });
   }
 
-  const snapshot = readLatestContextSnapshot(identity.id);
+  const snapshot = await readLatestContextSnapshot(identity.id);
   const context = isGardenContextSnapshotStale(snapshot)
     ? await buildGardenContext(identity.id)
     : snapshot;

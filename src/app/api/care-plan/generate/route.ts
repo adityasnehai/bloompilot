@@ -20,7 +20,7 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json(
       { error: "Profile not found for current session" },
@@ -28,7 +28,7 @@ export async function POST() {
     );
   }
 
-  let context = readLatestContextSnapshot(identity.id);
+  let context = await readLatestContextSnapshot(identity.id);
   if (isGardenContextSnapshotStale(context)) {
     context = await buildGardenContext(identity.id);
   }

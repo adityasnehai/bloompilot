@@ -330,8 +330,8 @@ export function normalizeWateringMode(value: string): "auto" | "custom" {
 }
 
 export async function buildUserContext(userId: number) {
-  const database = getDatabase();
-  const user = database
+  const database = await getDatabase();
+  const user = await database
     .prepare(
       `
       SELECT id, name, reminder_window, channels_json
@@ -357,8 +357,8 @@ export async function buildUserContext(userId: number) {
 }
 
 export async function buildGardenSetupContext(userId: number) {
-  const database = getDatabase();
-  const user = database
+  const database = await getDatabase();
+  const user = await database
     .prepare(
       `
       SELECT id, location, latitude, longitude, garden_type, timezone
@@ -504,8 +504,8 @@ export async function buildEnvironmentContext(location: {
 }
 
 export async function buildPlantContext(userId: number, gardenType?: string) {
-  const database = getDatabase();
-  const plants = database
+  const database = await getDatabase();
+  const plants = await database
     .prepare(
       `
       SELECT id, nickname, species, placement, sunlight, watering_interval_days, notes, photo_blob
@@ -519,7 +519,7 @@ export async function buildPlantContext(userId: number, gardenType?: string) {
   // Load studio layout once and build a plantId → zone lookup map.
   // Convert saved canvas position into a user-selected planning band.
   const effectiveGardenType = gardenType ?? "balcony";
-  const layout = getStudioLayout(userId, effectiveGardenType);
+  const layout = await getStudioLayout(userId, effectiveGardenType);
   const zoneMap = new Map<string, "full_sun" | "partial_shade" | "shade">();
   if (layout) {
     for (const lp of layout.plants) {
@@ -717,12 +717,12 @@ export function buildEvidenceRefs(context: ContextJson) {
   return refs;
 }
 
-export function saveContextSnapshot(userId: number, context: ContextJson) {
-  const database = getDatabase();
+export async function saveContextSnapshot(userId: number, context: ContextJson) {
+  const database = await getDatabase();
   const generatedAt = context.generated_at;
   const warnings = context.warnings;
 
-  database
+  await database
     .prepare(
       `
       INSERT INTO garden_context_snapshots (
@@ -740,7 +740,7 @@ export function saveContextSnapshot(userId: number, context: ContextJson) {
       JSON.stringify(warnings),
     );
 
-  const insertEvidence = database.prepare(
+  const insertEvidence = await database.prepare(
     `
     INSERT INTO plant_evidence (
       id, user_id, plant_id, evidence_type, source, value_json, created_at
@@ -750,7 +750,7 @@ export function saveContextSnapshot(userId: number, context: ContextJson) {
   );
 
   for (const plant of context.plants) {
-    insertEvidence.run(
+    await insertEvidence.run(
       crypto.randomUUID(),
       userId,
       plant.plant_id,
@@ -763,7 +763,7 @@ export function saveContextSnapshot(userId: number, context: ContextJson) {
       generatedAt,
     );
 
-    insertEvidence.run(
+    await insertEvidence.run(
       crypto.randomUUID(),
       userId,
       plant.plant_id,
@@ -832,7 +832,7 @@ export async function buildGardenContext(userId: number) {
           Boolean(plant.plant_knowledge.soil_preference),
       ));
 
-  saveContextSnapshot(userId, context);
+  await saveContextSnapshot(userId, context);
   return context;
 }
 
@@ -852,9 +852,9 @@ export function isGardenContextSnapshotStale(
   return Date.now() - generatedAt > maxAgeMs;
 }
 
-export function readLatestContextSnapshot(userId: number) {
-  const database = getDatabase();
-  const row = database
+export async function readLatestContextSnapshot(userId: number) {
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
       SELECT context_json

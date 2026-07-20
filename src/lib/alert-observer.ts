@@ -170,30 +170,30 @@ ${plantsText || "No plants added yet"}
 Scan for anomalies and call submit_alerts.`;
 }
 
-function persistAlerts(userId: number, rawAlerts: RawAlert[]): PlantAlert[] {
-  const db = getDatabase();
+async function persistAlerts(userId: number, rawAlerts: RawAlert[]): Promise<PlantAlert[]> {
+  const db = await getDatabase();
   const now = new Date().toISOString();
   const todayDate = now.slice(0, 10);
   const ownedPlants = new Map(
-    (db.prepare(`SELECT id, nickname FROM plants WHERE user_id = ?`).all(userId) as { id: string; nickname: string }[])
+    (await db.prepare(`SELECT id, nickname FROM plants WHERE user_id = ?`).all(userId) as { id: string; nickname: string }[])
       .map((plant) => [plant.id, plant.nickname]),
   );
 
   const persisted: PlantAlert[] = [];
 
   // Dedup: skip if an alert with same plant+type was already raised today
-  const existsStmt = db.prepare(
+  const existsStmt = await db.prepare(
     `SELECT 1 FROM plant_alerts WHERE user_id = ? AND plant_id = ? AND alert_type = ? AND date(triggered_at) = ? LIMIT 1`,
   );
 
   for (const raw of rawAlerts) {
     const plantName = ownedPlants.get(raw.plant_id);
     if (!plantName) continue;
-    const dup = existsStmt.get(userId, raw.plant_id, raw.alert_type, todayDate);
+    const dup = await existsStmt.get(userId, raw.plant_id, raw.alert_type, todayDate);
     if (dup) continue;
 
     const id = crypto.randomUUID();
-    db.prepare(
+    await db.prepare(
       `INSERT INTO plant_alerts (id, user_id, plant_id, plant_name, alert_type, message, urgency, notified, triggered_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     ).run(id, userId, raw.plant_id, plantName, raw.alert_type, raw.message.trim().slice(0, 240), raw.urgency, now);
@@ -219,11 +219,11 @@ async function fireNotifications(
   alerts: PlantAlert[],
   userEmail: string,
 ): Promise<number> {
-  const db = getDatabase();
+  const db = await getDatabase();
   const urgent = alerts.filter((a) => a.urgency === "high");
   if (urgent.length === 0) return 0;
 
-  const pushSubscriptions = db
+  const pushSubscriptions = await db
     .prepare(
       `SELECT endpoint, p256dh, auth FROM notification_subscriptions WHERE user_id = ? AND active = 1`,
     )
@@ -271,7 +271,7 @@ async function fireNotifications(
   // mark notified
   if (fired > 0) {
     const ids = urgent.map(() => "?").join(",");
-    db.prepare(
+    await db.prepare(
       `UPDATE plant_alerts SET notified = 1 WHERE id IN (${ids})`,
     ).run(...urgent.map((a) => a.id));
   }
@@ -285,7 +285,7 @@ export async function runAlertObserver(userId: number, userEmail: string): Promi
     return { alertsGenerated: 0, alertsFired: 0, alerts: [], skipped: true, skipReason: "No plants" };
   }
 
-  const summaries = getAllPlantHealthSummaries(userId);
+  const summaries = await getAllPlantHealthSummaries(userId);
 
   const messages: ChatMessage[] = [
     { role: "system", content: buildObserverSystemPrompt(context.garden.exposure, context.garden.weather_affected) },
@@ -310,7 +310,7 @@ export async function runAlertObserver(userId: number, userEmail: string): Promi
     }
   }
 
-  const alerts = persistAlerts(userId, rawAlerts);
+  const alerts = await persistAlerts(userId, rawAlerts);
   const fired = await fireNotifications(userId, alerts, userEmail);
 
   return {
@@ -321,9 +321,9 @@ export async function runAlertObserver(userId: number, userEmail: string): Promi
   };
 }
 
-export function readRecentAlerts(userId: number, limit = 20): PlantAlert[] {
-  const db = getDatabase();
-  const rows = db
+export async function readRecentAlerts(userId: number, limit = 20): Promise<PlantAlert[]> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM plant_alerts
        WHERE user_id = ? AND datetime(triggered_at) >= datetime('now', '-14 days')
@@ -344,9 +344,9 @@ export function readRecentAlerts(userId: number, limit = 20): PlantAlert[] {
   }));
 }
 
-export function readUnnotifiedAlerts(userId: number): PlantAlert[] {
-  const db = getDatabase();
-  const rows = db
+export async function readUnnotifiedAlerts(userId: number): Promise<PlantAlert[]> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM plant_alerts WHERE user_id = ? AND notified = 0 ORDER BY datetime(triggered_at) DESC`,
     )

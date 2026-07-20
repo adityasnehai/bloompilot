@@ -700,11 +700,11 @@ export function buildRawCareActions(context: ContextJson): CarePlanAction[] {
   return actions;
 }
 
-export function buildDiagnosisActions(
+export async function buildDiagnosisActions(
   userId: number,
-): CarePlanAction[] {
-  const database = getDatabase();
-  const rows = database
+): Promise<CarePlanAction[]> {
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
       SELECT plant_id, plant_nickname, category,
@@ -1120,13 +1120,13 @@ function buildRiskHorizon(context: ContextJson): RiskHorizon[] {
   ];
 }
 
-function buildCareAdherence(
+async function buildCareAdherence(
   userId: number,
   actions: CarePlanAction[],
   context: ContextJson,
-): CareAdherence {
-  const database = getDatabase();
-  const weeklyTotals = database
+): Promise<CareAdherence> {
+  const database = await getDatabase();
+  const weeklyTotals = await database
     .prepare(
       `
       SELECT
@@ -1143,7 +1143,7 @@ function buildCareAdherence(
   const due = weeklyTotals?.due_count ?? actions.filter((a) => a.status === "approved").length;
   const completed = weeklyTotals?.completed_count ?? 0;
 
-  const byPlantRows = database
+  const byPlantRows = await database
     .prepare(
       `
       SELECT
@@ -1179,9 +1179,9 @@ function buildCareAdherence(
   };
 }
 
-function buildOutcomeTracking(userId: number): OutcomeTracking {
-  const database = getDatabase();
-  const rows = database
+async function buildOutcomeTracking(userId: number): Promise<OutcomeTracking> {
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
       SELECT plant_id, issue, severity, diagnosis_evidence_status as evidence_status, category, created_at
@@ -1248,7 +1248,7 @@ function buildRecommendationConfidence(
     });
 }
 
-export function buildCarePlanOutput(params: {
+export async function buildCarePlanOutput(params: {
   userId: number;
   context: ContextJson;
   agentRunId: string;
@@ -1316,15 +1316,15 @@ export function buildCarePlanOutput(params: {
     reminder_readiness: buildReminderReadiness(scheduledActions, params.context),
     water_balance: buildWaterBalance(params.context),
     risk_horizon: buildRiskHorizon(params.context),
-    care_adherence: buildCareAdherence(params.userId, scheduledActions, params.context),
-    outcome_tracking: buildOutcomeTracking(params.userId),
+    care_adherence: await buildCareAdherence(params.userId, scheduledActions, params.context),
+    outcome_tracking: await buildOutcomeTracking(params.userId),
     recommendation_confidence: buildRecommendationConfidence(params.approvedActions, params.context),
   } satisfies CarePlanOutput;
 }
 
-export function saveCarePlan(userId: number, plan: CarePlanOutput) {
-  withTransaction((database) => {
-    database
+export async function saveCarePlan(userId: number, plan: CarePlanOutput) {
+  await withTransaction(async (database) => {
+    await database
       .prepare(
         `
         INSERT INTO care_plans (
@@ -1343,7 +1343,7 @@ export function saveCarePlan(userId: number, plan: CarePlanOutput) {
         plan.generated_at,
       );
 
-    database
+    await database
       .prepare(
         `
         INSERT INTO agent_runs (id, user_id, trigger, created_at, payload_json)
@@ -1362,7 +1362,7 @@ export function saveCarePlan(userId: number, plan: CarePlanOutput) {
         }),
       );
 
-    const insertTrace = database.prepare(
+    const insertTrace = await database.prepare(
       `
       INSERT INTO agent_traces (
         id, run_id, user_id, agent_name, status, input_summary,
@@ -1373,7 +1373,7 @@ export function saveCarePlan(userId: number, plan: CarePlanOutput) {
     );
 
     for (const trace of plan.agent_traces) {
-      insertTrace.run(
+      await insertTrace.run(
         trace.id,
         plan.agent_run_id,
         userId,
@@ -1388,9 +1388,9 @@ export function saveCarePlan(userId: number, plan: CarePlanOutput) {
   });
 }
 
-export function readLatestCarePlan(userId: number) {
-  const database = getDatabase();
-  const row = database
+export async function readLatestCarePlan(userId: number) {
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
       SELECT plan_json
@@ -1413,7 +1413,7 @@ export function readLatestCarePlan(userId: number) {
   }
 }
 
-export function appendDiagnosisTreatmentActions(
+export async function appendDiagnosisTreatmentActions(
   userId: number,
   diagnosis: {
     plantId: string;
@@ -1423,7 +1423,7 @@ export function appendDiagnosisTreatmentActions(
     severity: "low" | "medium" | "high";
   },
 ) {
-  const plan = readLatestCarePlan(userId);
+  const plan = await readLatestCarePlan(userId);
   if (!plan) return;
 
   const today = new Date().toISOString().slice(0, 10);
@@ -1494,12 +1494,12 @@ export function appendDiagnosisTreatmentActions(
     care_calendar: buildCareCalendar([...updatedTodayActions, ...plan.upcoming_tasks]),
   });
 
-  const database = getDatabase();
-  const latest = database
+  const database = await getDatabase();
+  const latest = await database
     .prepare(`SELECT id FROM care_plans WHERE user_id = ? ORDER BY datetime(generated_at) DESC LIMIT 1`)
     .get(userId) as { id: string } | undefined;
   if (!latest) return;
-  database
+  await database
     .prepare(`UPDATE care_plans SET plan_json = ? WHERE id = ?`)
     .run(JSON.stringify(updatedPlan), latest.id);
 }

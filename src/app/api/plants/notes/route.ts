@@ -7,19 +7,19 @@ import { getDatabase } from "@/lib/database";
 export async function GET(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
   const plantId = request.nextUrl.searchParams.get("plantId");
   if (!plantId) return NextResponse.json({ error: "plantId required" }, { status: 400 });
 
-  return NextResponse.json({ notes: getPlantNotes(identity.id, plantId) });
+  return NextResponse.json({ notes: await getPlantNotes(identity.id, plantId) });
 }
 
 export async function POST(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
   const body = await request.json().catch(() => null) as { plantId?: string; plantName?: string; body?: string } | null;
@@ -28,22 +28,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const plant = getDatabase().prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(body.plantId, identity.id) as { nickname: string } | undefined;
+  const db = await getDatabase();
+  const plant = await db.prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(body.plantId, identity.id) as { nickname: string } | undefined;
   if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
 
-  const note = addPlantNote(identity.id, body.plantId, plant.nickname, body.body);
+  const note = await addPlantNote(identity.id, body.plantId, plant.nickname, body.body);
   return NextResponse.json({ note });
 }
 
 export async function DELETE(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
   const noteId = request.nextUrl.searchParams.get("noteId");
   if (!noteId) return NextResponse.json({ error: "noteId required" }, { status: 400 });
 
-  const deleted = deletePlantNote(identity.id, noteId);
+  const deleted = await deletePlantNote(identity.id, noteId);
   return NextResponse.json({ ok: deleted });
 }

@@ -12,13 +12,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "plantId required" }, { status: 400 });
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const summary = getPlantHealthSummary(identity.id, plantId);
-  const history = getPlantHealthHistory(identity.id, plantId, 15);
+  const summary = await getPlantHealthSummary(identity.id, plantId);
+  const history = await getPlantHealthHistory(identity.id, plantId, 15);
 
   return NextResponse.json({ summary, history });
 }

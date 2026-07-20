@@ -18,8 +18,8 @@ import { clearWorkspaceDerivedCareData } from "@/lib/workspace-store";
 import { logHealthEvent, type HealthEventType } from "@/lib/plant-memory";
 import { getDatabase } from "@/lib/database";
 
-function cleanupPlantOrphans(userId: number, plantId: string) {
-  const db = getDatabase();
+async function cleanupPlantOrphans(userId: number, plantId: string) {
+  const db = await getDatabase();
   const tables = [
     "diagnosis_runs",
     "plant_alerts",
@@ -29,9 +29,9 @@ function cleanupPlantOrphans(userId: number, plantId: string) {
     "plant_evidence",
   ];
   for (const table of tables) {
-    db.prepare(`DELETE FROM ${table} WHERE user_id = ? AND plant_id = ?`).run(userId, plantId);
+    await db.prepare(`DELETE FROM ${table} WHERE user_id = ? AND plant_id = ?`).run(userId, plantId);
   }
-  db.prepare(`DELETE FROM action_feedback WHERE user_id = ? AND plant_id = ?`).run(userId, plantId);
+  await db.prepare(`DELETE FROM action_feedback WHERE user_id = ? AND plant_id = ?`).run(userId, plantId);
 }
 
 function parsePlacement(value: unknown): PlantPlacement {
@@ -103,7 +103,7 @@ export async function addPlantMutation(input: PlantInput) {
   const nextState = addPlantToGarden(gardenState, input);
 
   await writeGardenState(nextState);
-  if (userId) clearWorkspaceDerivedCareData(userId);
+  if (userId) await clearWorkspaceDerivedCareData(userId);
 
   return {
     garden: nextState,
@@ -124,7 +124,7 @@ export async function updatePlantMutation(plantId: string, input: PlantInput) {
   }
 
   await writeGardenState(result.state);
-  if (userId) clearWorkspaceDerivedCareData(userId);
+  if (userId) await clearWorkspaceDerivedCareData(userId);
 
   return {
     garden: result.state,
@@ -148,8 +148,8 @@ export async function removePlantMutation(plantId: string) {
 
   await writeGardenState(nextState);
   if (userId) {
-    cleanupPlantOrphans(userId, plantId);
-    clearWorkspaceDerivedCareData(userId);
+    await cleanupPlantOrphans(userId, plantId);
+    await clearWorkspaceDerivedCareData(userId);
   }
 
   return {
@@ -181,7 +181,7 @@ export async function toggleTaskMutation(taskId: string) {
       };
       const eventType = eventTypeMap[prevTask.kind];
       if (completing && eventType) {
-        logHealthEvent(
+        await logHealthEvent(
           userId,
           plant.id,
           plant.nickname,

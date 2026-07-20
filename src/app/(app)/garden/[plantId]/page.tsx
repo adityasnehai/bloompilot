@@ -56,9 +56,9 @@ export default async function PlantDetailPage({
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) redirect("/onboarding");
 
-  const db = getDatabase();
+  const db = await getDatabase();
 
-  const plant = db
+  const plant = await db
     .prepare(
       `SELECT id, nickname, species, placement, sunlight, watering_interval_days, notes, added_at, last_watered_at, photo_blob, photo_type
        FROM plants WHERE id = ? AND user_id = ?`,
@@ -67,14 +67,14 @@ export default async function PlantDetailPage({
 
   if (!plant) notFound();
 
-  const diagnosisRows = db
+  const diagnosisRows = await db
     .prepare(
       `SELECT id, plant_id, plant_nickname, issue, category, severity, confidence, summary, treatment_json, follow_up, created_at
        FROM diagnosis_runs WHERE user_id = ? AND plant_id = ? ORDER BY datetime(created_at) DESC LIMIT 6`,
     )
     .all(userId, plantId) as DiagnosisRow[];
 
-  const milestones = db
+  const milestones = await db
     .prepare(
       `SELECT id, stage, note, recorded_at FROM plant_milestones WHERE user_id = ? AND plant_id = ? ORDER BY datetime(recorded_at) DESC LIMIT 20`,
     )
@@ -82,10 +82,10 @@ export default async function PlantDetailPage({
 
   const [healthEvents, notes] = await Promise.all([
     getPlantHealthHistory(userId, plantId, 20),
-    Promise.resolve(getPlantNotes(userId, plantId, 20)),
+    getPlantNotes(userId, plantId, 20),
   ]);
 
-  const knowledge = plant.species ? getKnowledgeFromDB(plant.species.toLowerCase().trim()) : null;
+  const knowledge = plant.species ? await getKnowledgeFromDB(plant.species.toLowerCase().trim()) : null;
 
   const hasPhoto = !!plant.photo_blob;
 

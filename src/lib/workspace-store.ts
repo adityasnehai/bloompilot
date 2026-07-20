@@ -70,9 +70,9 @@ function mapRowToSession(row: UserRow): DemoSession {
   };
 }
 
-export function readWorkspaceProfileByEmail(email: string) {
-  const database = getDatabase();
-  const row = database
+export async function readWorkspaceProfileByEmail(email: string) {
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
         SELECT id, email, name, location, garden_type, reminder_window,
@@ -87,14 +87,14 @@ export function readWorkspaceProfileByEmail(email: string) {
   return row ? mapRowToSession(row) : null;
 }
 
-export function upsertWorkspaceProfile(
+export async function upsertWorkspaceProfile(
   session: DemoSession,
   previousEmail?: string,
 ) {
-  const database = getDatabase();
+  const database = await getDatabase();
   const targetEmail = previousEmail?.trim().toLowerCase() || session.email;
   const timestamp = new Date().toISOString();
-  const existing = database
+  const existing = await database
     .prepare(
       `
         SELECT id, email, name, location, garden_type, reminder_window,
@@ -107,7 +107,7 @@ export function upsertWorkspaceProfile(
     .get(targetEmail) as UserRow | undefined;
 
   if (existing) {
-    database
+    await database
       .prepare(
         `
           UPDATE users
@@ -143,7 +143,7 @@ export function upsertWorkspaceProfile(
     return existing.id;
   }
 
-  database
+  await database
     .prepare(
       `
         INSERT INTO users (
@@ -175,37 +175,37 @@ export function upsertWorkspaceProfile(
       timestamp,
     );
 
-  const inserted = database
+  const inserted = await database
     .prepare(`SELECT id FROM users WHERE email = ?`)
     .get(session.email) as { id: number };
 
   return inserted.id;
 }
 
-export function readWorkspaceIdentityByEmail(email: string) {
-  const database = getDatabase();
-  const row = database
+export async function readWorkspaceIdentityByEmail(email: string) {
+  const database = await getDatabase();
+  const row = await database
     .prepare(`SELECT id FROM users WHERE email = ?`)
     .get(email.trim().toLowerCase()) as { id: number } | undefined;
 
   return row ?? null;
 }
 
-export function readAllActiveUsers(): { id: number; email: string }[] {
-  const database = getDatabase();
-  return database
+export async function readAllActiveUsers(): Promise<{ id: number; email: string }[]> {
+  const database = await getDatabase();
+  return await database
     .prepare(`SELECT id, email FROM users WHERE onboarded = 1`)
     .all() as { id: number; email: string }[];
 }
 
-export function clearWorkspaceDerivedCareData(userId: number) {
-  const database = getDatabase();
+export async function clearWorkspaceDerivedCareData(userId: number) {
+  const database = await getDatabase();
 
-  database.prepare(`DELETE FROM care_plans WHERE user_id = ?`).run(userId);
-  database.prepare(`DELETE FROM agent_traces WHERE user_id = ?`).run(userId);
-  database.prepare(`DELETE FROM garden_context_snapshots WHERE user_id = ?`).run(userId);
-  database.prepare(`DELETE FROM plant_evidence WHERE user_id = ?`).run(userId);
-  database
+  await database.prepare(`DELETE FROM care_plans WHERE user_id = ?`).run(userId);
+  await database.prepare(`DELETE FROM agent_traces WHERE user_id = ?`).run(userId);
+  await database.prepare(`DELETE FROM garden_context_snapshots WHERE user_id = ?`).run(userId);
+  await database.prepare(`DELETE FROM plant_evidence WHERE user_id = ?`).run(userId);
+  await database
     .prepare(`DELETE FROM agent_runs WHERE user_id = ? AND trigger = ?`)
     .run(userId, "care_plan_graph");
 }

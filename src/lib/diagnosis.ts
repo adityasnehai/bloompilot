@@ -267,8 +267,8 @@ export async function createDiagnosisRun(input: DiagnosisInput) {
   const imageBytes = new Uint8Array(await input.photo.arrayBuffer());
 
   // Fetch weather and care history in parallel for richer diagnosis context
-  const db = getDatabase();
-  const userRow = db.prepare(`SELECT latitude, longitude FROM users WHERE id = ?`).get(userId) as
+  const db = await getDatabase();
+  const userRow = await db.prepare(`SELECT latitude, longitude FROM users WHERE id = ?`).get(userId) as
     | { latitude: number | null; longitude: number | null }
     | undefined;
 
@@ -306,8 +306,8 @@ export async function createDiagnosisRun(input: DiagnosisInput) {
   const createdAt = new Date().toISOString();
   const runId = crypto.randomUUID();
 
-  withTransaction((database) => {
-      database
+  await withTransaction(async (database) => {
+      await database
       .prepare(
         `
           INSERT INTO diagnosis_runs (
@@ -347,7 +347,7 @@ export async function createDiagnosisRun(input: DiagnosisInput) {
         createdAt,
       );
 
-    database
+    await database
       .prepare(
         `
           INSERT INTO activities (
@@ -369,7 +369,7 @@ export async function createDiagnosisRun(input: DiagnosisInput) {
 
   const actionableDiagnosis = isCareActionableDiagnosisRun(analysis);
 
-  logHealthEvent(
+  await logHealthEvent(
     userId,
     plant.id,
     plant.nickname,
@@ -387,7 +387,7 @@ export async function createDiagnosisRun(input: DiagnosisInput) {
   );
 
   if (actionableDiagnosis) {
-    appendDiagnosisTreatmentActions(userId, {
+    await appendDiagnosisTreatmentActions(userId, {
       plantId: plant.id,
       plantNickname: plant.nickname,
       issue: analysis.issue,
@@ -429,8 +429,8 @@ export async function readRecentDiagnosisRuns(limit = 8) {
     return [] as DiagnosisRun[];
   }
 
-  const database = getDatabase();
-  const rows = database
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
         SELECT id, plant_id, plant_nickname, plant_species, image_name,
@@ -456,8 +456,8 @@ export async function readCareRelevantDiagnosisRuns(limit = 8) {
     return [] as DiagnosisRun[];
   }
 
-  const database = getDatabase();
-  const rows = database
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
         SELECT id, plant_id, plant_nickname, plant_species, image_name,
@@ -491,8 +491,8 @@ export async function readDiagnosisPhoto(runId: string) {
     return null;
   }
 
-  const database = getDatabase();
-  const row = database
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
         SELECT image_blob, image_content_type, image_name

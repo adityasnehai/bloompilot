@@ -17,7 +17,7 @@ export async function runObserverAction(formData: FormData) {
   }
 
   const returnTo = formData.get("returnTo")?.toString() ?? "/dashboard";
-  const userId = upsertWorkspaceProfile(session);
+  const userId = await upsertWorkspaceProfile(session);
 
   if (userId) {
     await runAlertObserver(userId, session.email);

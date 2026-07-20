@@ -14,10 +14,10 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ care_plan: null });
   }
 
-  return NextResponse.json({ care_plan: readLatestCarePlan(identity.id) });
+  return NextResponse.json({ care_plan: await readLatestCarePlan(identity.id) });
 }

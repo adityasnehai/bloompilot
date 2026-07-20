@@ -7,12 +7,12 @@ export async function GET() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const alerts = readRecentAlerts(identity.id, 30);
+  const alerts = await readRecentAlerts(identity.id, 30);
   return NextResponse.json({ alerts });
 }
 
@@ -20,7 +20,7 @@ export async function POST() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }

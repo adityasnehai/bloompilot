@@ -48,9 +48,9 @@ export async function sendDailyReminder(
   userEmail: string,
   userName: string,
 ): Promise<{ sent: boolean; taskCount: number; reason?: string }> {
-  const db = getDatabase();
+  const db = await getDatabase();
 
-  const tasks = db
+  const tasks = await db
     .prepare(
       `SELECT ct.title, ct.kind, p.nickname as plant_name
        FROM care_tasks ct

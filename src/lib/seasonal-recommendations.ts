@@ -27,12 +27,12 @@ function currentYear() {
 
 type StoredRow = { advice_json: string; generated_at: string };
 
-export function getStoredSeasonalRecommendations(userId: number): SeasonalAdvice | null {
-  const db = getDatabase();
+export async function getStoredSeasonalRecommendations(userId: number): Promise<SeasonalAdvice | null> {
+  const db = await getDatabase();
   const season = currentSeason();
   const year = currentYear();
 
-  const row = db
+  const row = await db
     .prepare(`SELECT advice_json, generated_at FROM seasonal_recommendations WHERE user_id = ? AND season = ? AND year = ?`)
     .get(userId, season, year) as StoredRow | undefined;
 
@@ -74,7 +74,7 @@ export async function generateSeasonalRecommendations(
 ): Promise<SeasonalAdvice> {
   const season = currentSeason();
   const year = currentYear();
-  const db = getDatabase();
+  const db = await getDatabase();
 
   const plantList =
     plants.length > 0
@@ -143,7 +143,7 @@ Return JSON:
     generatedAt: new Date().toISOString(),
   };
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO seasonal_recommendations (id, user_id, season, year, advice_json, generated_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id, season, year) DO UPDATE SET advice_json = excluded.advice_json, generated_at = excluded.generated_at`,

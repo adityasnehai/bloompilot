@@ -51,15 +51,17 @@ export function verifyTelegramConnectToken(token: string) {
   }
 }
 
-export function readTelegramChatId(userId: number) {
-  const row = getDatabase()
+export async function readTelegramChatId(userId: number) {
+  const db = await getDatabase();
+  const row = (await db
     .prepare("SELECT telegram_chat_id FROM users WHERE id = ? LIMIT 1")
-    .get(userId) as { telegram_chat_id: string | null } | undefined;
+    .get(userId)) as { telegram_chat_id: string | null } | undefined;
   return row?.telegram_chat_id ?? null;
 }
 
-export function saveTelegramChatId(userId: number, chatId: string) {
-  getDatabase()
+export async function saveTelegramChatId(userId: number, chatId: string) {
+  const db = await getDatabase();
+  await db
     .prepare("UPDATE users SET telegram_chat_id = ?, updated_at = ? WHERE id = ?")
     .run(chatId, new Date().toISOString(), userId);
 }

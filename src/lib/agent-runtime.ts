@@ -211,11 +211,11 @@ export async function runAgentBrief(trigger = "manual") {
   }
 
   const payload = await buildPayload();
-  const database = getDatabase();
+  const database = await getDatabase();
   const runId = crypto.randomUUID();
   const createdAt = new Date().toISOString();
 
-  database
+  await database
     .prepare(
       `
         INSERT INTO agent_runs (id, user_id, trigger, created_at, payload_json)
@@ -239,8 +239,8 @@ export async function readLatestAgentRun() {
     return null;
   }
 
-  const database = getDatabase();
-  const row = database
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
         SELECT id, trigger, created_at, payload_json

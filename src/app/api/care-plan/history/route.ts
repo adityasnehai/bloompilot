@@ -14,11 +14,11 @@ type HistoryRow = {
 export async function GET() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const db = getDatabase();
-  const rows = db
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT id, generated_at, plan_json
        FROM care_plans WHERE user_id = ?

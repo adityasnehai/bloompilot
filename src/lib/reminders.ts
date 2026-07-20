@@ -177,9 +177,9 @@ function parseChannels(raw: string): NotificationChannel[] {
   }
 }
 
-function readReminderUserProfile(userId: number) {
-  const database = getDatabase();
-  const row = database
+async function readReminderUserProfile(userId: number) {
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
       SELECT id, email, reminder_window, channels_json, telegram_chat_id, timezone, onboarded
@@ -213,9 +213,9 @@ function readReminderUserProfile(userId: number) {
   } satisfies ReminderUserProfile;
 }
 
-export function readAllReminderUserProfiles() {
-  const database = getDatabase();
-  const rows = database
+export async function readAllReminderUserProfiles() {
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
       SELECT id, email, reminder_window, channels_json, telegram_chat_id, timezone, onboarded
@@ -254,11 +254,11 @@ export async function readCurrentReminderChannelReadiness() {
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) return null;
 
-  const profile = readReminderUserProfile(userId);
+  const profile = await readReminderUserProfile(userId);
   if (!profile) return null;
 
-  const database = getDatabase();
-  const pushSubscriptionCount = database
+  const database = await getDatabase();
+  const pushSubscriptionCount = await database
     .prepare(
       `
       SELECT COUNT(*) AS count
@@ -458,14 +458,14 @@ function initChannelStats(): Record<ReminderChannel, ChannelStats> {
   };
 }
 
-function readReminderHistoryState(params: {
+async function readReminderHistoryState(params: {
   userId: number;
   fromIso: string;
   localDate: string;
   timezone: string | null;
 }) {
-  const database = getDatabase();
-  const rows = database
+  const database = await getDatabase();
+  const rows = await database
     .prepare(
       `
       SELECT task_id, plant_id, status, created_at, idempotency_key
@@ -532,7 +532,7 @@ async function runReminderSweepForProfile(
 ) {
   if (!profile.onboarded) return null;
 
-  const plan = readLatestCarePlan(profile.userId);
+  const plan = await readLatestCarePlan(profile.userId);
   if (!plan) return null;
 
   const now = new Date();
@@ -542,7 +542,7 @@ async function runReminderSweepForProfile(
   const activeWindow = isReminderWindowActive(profile, now);
   const waterState = buildWateringSkipMap(plan.watering_forecast, localDate);
   const dedupeFrom = new Date(now.getTime() - DEDUPE_HOURS * 60 * 60 * 1000).toISOString();
-  const history = readReminderHistoryState({
+  const history = await readReminderHistoryState({
     userId: profile.userId,
     fromIso: dedupeFrom,
     localDate,
@@ -836,13 +836,13 @@ async function runReminderSweepForProfile(
     }
   }
 
-  const database = getDatabase();
+  const database = await getDatabase();
   const runId = crypto.randomUUID();
   const createdAt = nowIso();
   const deliveries: ReminderDelivery[] = [];
   const persistedRows: ReminderDeliveryRow[] = [];
 
-  const pushSubscriptions = database
+  const pushSubscriptions = await database
     .prepare(
       `
       SELECT endpoint, p256dh, auth
@@ -990,15 +990,15 @@ async function runReminderSweepForProfile(
     suppression_reasons: suppressions,
   };
 
-  withTransaction((db) => {
-    db.prepare(
+  await withTransaction(async (db) => {
+    await db.prepare(
       `
       INSERT INTO reminder_runs (id, user_id, trigger, created_at, payload_json)
       VALUES (?, ?, ?, ?, ?)
       `,
     ).run(runId, profile.userId, trigger, createdAt, JSON.stringify(payload));
 
-    const insertDelivery = db.prepare(
+    const insertDelivery = await db.prepare(
       `
       INSERT INTO reminder_deliveries (
         id, run_id, user_id, task_id, plant_id, channel, status, scheduled_for,
@@ -1010,7 +1010,7 @@ async function runReminderSweepForProfile(
     );
 
     for (const row of persistedRows) {
-      insertDelivery.run(
+      await insertDelivery.run(
         row.id,
         row.run_id,
         row.user_id,
@@ -1046,7 +1046,7 @@ export async function runReminderSweep(trigger = "manual") {
   if (!userId) return null;
 
   const profile =
-    readReminderUserProfile(userId) ??
+    (await readReminderUserProfile(userId)) ??
     ({
       userId,
       email: session.email,
@@ -1064,7 +1064,7 @@ export async function runReminderSweepForUserId(
   userId: number,
   trigger = "cron",
 ) {
-  const profile = readReminderUserProfile(userId);
+  const profile = await readReminderUserProfile(userId);
   if (!profile) return null;
   return runReminderSweepForProfile(profile, trigger);
 }
@@ -1073,8 +1073,8 @@ export async function readLatestReminderRun() {
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) return null;
 
-  const database = getDatabase();
-  const row = database
+  const database = await getDatabase();
+  const row = await database
     .prepare(
       `
       SELECT id, trigger, created_at, payload_json
@@ -1177,16 +1177,16 @@ export async function upsertPushSubscription(params: {
   auth: string;
   userAgent?: string;
 }) {
-  const database = getDatabase();
+  const database = await getDatabase();
   const now = nowIso();
-  const existing = database
+  const existing = await database
     .prepare(
       `SELECT id FROM notification_subscriptions WHERE endpoint = ? LIMIT 1`,
     )
     .get(params.endpoint) as { id: string } | undefined;
 
   if (existing) {
-    database
+    await database
       .prepare(
         `
         UPDATE notification_subscriptions
@@ -1206,7 +1206,7 @@ export async function upsertPushSubscription(params: {
   }
 
   const id = crypto.randomUUID();
-  database
+  await database
     .prepare(
       `
       INSERT INTO notification_subscriptions (
@@ -1232,9 +1232,9 @@ export async function deactivatePushSubscription(params: {
   userId: number;
   endpoint: string;
 }) {
-  const database = getDatabase();
+  const database = await getDatabase();
   const now = nowIso();
-  const result = database
+  const result = await database
     .prepare(
       `
       UPDATE notification_subscriptions

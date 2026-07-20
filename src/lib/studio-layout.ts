@@ -106,9 +106,9 @@ function isLayoutPlant(value: unknown): value is LayoutPlant {
     && (plant.imageUrl === undefined || typeof plant.imageUrl === "string");
 }
 
-export function getStudioLayout(userId: number, gardenType: string): StudioLayout | null {
-  const db = getDatabase();
-  const row = db
+export async function getStudioLayout(userId: number, gardenType: string): Promise<StudioLayout | null> {
+  const db = await getDatabase();
+  const row = await db
     .prepare(
       `SELECT layout_json, garden_type, updated_at
        FROM studio_layouts WHERE user_id = ? AND garden_type = ?`,
@@ -126,14 +126,14 @@ export function getStudioLayout(userId: number, gardenType: string): StudioLayou
   }
 }
 
-export function saveStudioLayout(
+export async function saveStudioLayout(
   userId: number,
   gardenType: string,
   plants: LayoutPlant[],
-): string {
-  const db = getDatabase();
+): Promise<string> {
+  const db = await getDatabase();
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO studio_layouts (user_id, garden_type, layout_json, updated_at)
      VALUES (?, ?, ?, ?)
      ON CONFLICT (user_id, garden_type) DO UPDATE

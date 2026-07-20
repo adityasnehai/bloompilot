@@ -43,7 +43,7 @@ export type PlantHealthSummary = {
   consecutiveSkips: number;
 };
 
-export function logHealthEvent(
+export async function logHealthEvent(
   userId: number,
   plantId: string,
   plantName: string,
@@ -51,8 +51,8 @@ export function logHealthEvent(
   detail: string,
   metadata: Record<string, unknown> = {},
 ) {
-  const db = getDatabase();
-  db.prepare(
+  const db = await getDatabase();
+  await db.prepare(
     `INSERT INTO plant_health_events (id, user_id, plant_id, plant_name, event_type, detail, metadata_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -67,13 +67,13 @@ export function logHealthEvent(
   );
 }
 
-export function getPlantHealthHistory(
+export async function getPlantHealthHistory(
   userId: number,
   plantId: string,
   limit = 20,
-): HealthEvent[] {
-  const db = getDatabase();
-  const rows = db
+): Promise<HealthEvent[]> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM plant_health_events
        WHERE user_id = ? AND plant_id = ?
@@ -85,9 +85,9 @@ export function getPlantHealthHistory(
   return rows.map(rowToEvent);
 }
 
-export function getGardenHealthHistory(userId: number, limit = 50): HealthEvent[] {
-  const db = getDatabase();
-  const rows = db
+export async function getGardenHealthHistory(userId: number, limit = 50): Promise<HealthEvent[]> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM plant_health_events
        WHERE user_id = ?
@@ -99,11 +99,11 @@ export function getGardenHealthHistory(userId: number, limit = 50): HealthEvent[
   return rows.map(rowToEvent);
 }
 
-export function getPlantHealthSummary(
+export async function getPlantHealthSummary(
   userId: number,
   plantId: string,
-): PlantHealthSummary | null {
-  const events = getPlantHealthHistory(userId, plantId, 30);
+): Promise<PlantHealthSummary | null> {
+  const events = await getPlantHealthHistory(userId, plantId, 30);
 
   if (events.length === 0) {
     return null;
@@ -148,17 +148,18 @@ export function getPlantHealthSummary(
   };
 }
 
-export function getAllPlantHealthSummaries(userId: number): PlantHealthSummary[] {
-  const db = getDatabase();
-  const plantIds = db
+export async function getAllPlantHealthSummaries(userId: number): Promise<PlantHealthSummary[]> {
+  const db = await getDatabase();
+  const plantIds = await db
     .prepare(
       `SELECT DISTINCT plant_id FROM plant_health_events WHERE user_id = ?`,
     )
     .all(userId) as { plant_id: string }[];
 
-  return plantIds
-    .map(({ plant_id }) => getPlantHealthSummary(userId, plant_id))
-    .filter((s): s is PlantHealthSummary => s !== null);
+  const summaries = await Promise.all(
+    plantIds.map(({ plant_id }) => getPlantHealthSummary(userId, plant_id)),
+  );
+  return summaries.filter((s): s is PlantHealthSummary => s !== null);
 }
 
 function rowToEvent(row: HealthEventRow): HealthEvent {

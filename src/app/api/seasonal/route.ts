@@ -15,10 +15,10 @@ export const runtime = "nodejs";
 export async function GET() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const stored = getStoredSeasonalRecommendations(identity.id);
+  const stored = await getStoredSeasonalRecommendations(identity.id);
   if (stored) return NextResponse.json({ advice: stored, cached: true });
 
   return NextResponse.json({ advice: null, cached: false });
@@ -27,23 +27,23 @@ export async function GET() {
 export async function POST() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const db = getDatabase();
+  const db = await getDatabase();
 
   type UserRow = { garden_type: string; location: string; latitude: number | null; longitude: number | null };
-  const userRow = db
+  const userRow = await db
     .prepare(`SELECT garden_type, location, latitude, longitude FROM users WHERE id = ?`)
     .get(identity.id) as UserRow | undefined;
 
   type PlantRow = { id: string; nickname: string; species: string };
-  const plantRows = db
+  const plantRows = await db
     .prepare(`SELECT id, nickname, species FROM plants WHERE user_id = ? LIMIT 15`)
     .all(identity.id) as PlantRow[];
 
   // Build health score map from recent events
-  const healthEvents = getGardenHealthHistory(identity.id, 100);
+  const healthEvents = await getGardenHealthHistory(identity.id, 100);
   const healthScoreByPlant = new Map<string, number>();
   const diagnosedPlants = new Set<string>();
   for (const event of healthEvents) {

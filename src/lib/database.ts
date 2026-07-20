@@ -1,8 +1,69 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdirSync, copyFileSync, existsSync } from "node:fs";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { createClient, type Client, type InArgs, type InValue, type Row, type Transaction } from "@libsql/client";
 
-let databaseInstance: DatabaseSync | null = null;
+// ── Thin async adapter over @libsql/client, shaped to match the sync
+// node:sqlite `DatabaseSync` API this codebase was originally written
+// against (`db.prepare(sql).get/all/run(...args)`), so every call site
+// only needs an `await` added, not a rewrite of its SQL or logic. ────────
+// Rows are explicitly re-mapped to plain objects (rather than returning
+// libSQL's `Row` directly) because `Row` also exposes numeric indices and
+// a `length` property, which would silently break any app code that does
+// `Object.keys(row)` or `{...row}` expecting only the named columns.
+export type DbRow = Record<string, unknown>;
+
+type Executor = Client | Transaction;
+
+function rowsToObjects(columns: string[], rows: readonly Row[]): DbRow[] {
+  return rows.map((row) => {
+    const obj: DbRow = {};
+    columns.forEach((col, i) => {
+      obj[col] = row[i];
+    });
+    return obj;
+  });
+}
+
+class PreparedStatement {
+  constructor(
+    private executor: Executor,
+    private sql: string,
+  ) {}
+
+  async get(...args: InValue[]): Promise<DbRow | undefined> {
+    const result = await this.executor.execute({ sql: this.sql, args: args as InArgs });
+    return rowsToObjects(result.columns, result.rows)[0];
+  }
+
+  async all(...args: InValue[]): Promise<DbRow[]> {
+    const result = await this.executor.execute({ sql: this.sql, args: args as InArgs });
+    return rowsToObjects(result.columns, result.rows);
+  }
+
+  async run(...args: InValue[]): Promise<{ changes: number; lastInsertRowid: number | bigint }> {
+    const result = await this.executor.execute({ sql: this.sql, args: args as InArgs });
+    return {
+      changes: result.rowsAffected,
+      lastInsertRowid: result.lastInsertRowid ?? 0,
+    };
+  }
+}
+
+export class DbHandle {
+  constructor(private executor: Executor) {}
+
+  prepare(sql: string): PreparedStatement {
+    return new PreparedStatement(this.executor, sql);
+  }
+
+  async exec(sql: string): Promise<void> {
+    await this.executor.executeMultiple(sql);
+  }
+}
+
+let clientInstance: Client | null = null;
+let dbHandleInstance: DbHandle | null = null;
+let schemaInitPromise: Promise<void> | null = null;
 const LOCAL_DEV_DATABASE_PATH = "/tmp/bloompilot.sqlite";
 const LEGACY_PROJECT_DATABASE_PATH = resolve(process.cwd(), "./data/bloompilot.sqlite");
 
@@ -57,8 +118,8 @@ function migrateLegacyProjectDatabase(targetPath: string) {
   copyFileSync(LEGACY_PROJECT_DATABASE_PATH, targetPath);
 }
 
-function initializeSchema(database: DatabaseSync) {
-  database.exec(`
+async function initializeSchema(database: DbHandle) {
+  await database.exec(`
     PRAGMA foreign_keys = ON;
 
     CREATE TABLE IF NOT EXISTS users (
@@ -402,21 +463,21 @@ function initializeSchema(database: DatabaseSync) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_species_key ON plant_species_knowledge(species_key);
   `);
 
-  ensureColumn(database, "users", "latitude", "REAL");
-  ensureColumn(database, "users", "longitude", "REAL");
-  ensureColumn(database, "users", "age", "INTEGER");
-  ensureColumn(database, "users", "gender", "TEXT");
-  ensureColumn(database, "users", "email_daily_reminder", "INTEGER DEFAULT 1");
-  ensureColumn(database, "users", "email_weekly_digest", "INTEGER DEFAULT 1");
-  ensureColumn(database, "users", "whatsapp_number", "TEXT");
-  ensureColumn(database, "users", "telegram_chat_id", "TEXT");
-  ensureColumn(database, "users", "timezone", "TEXT");
-  ensureColumn(database, "users", "country_code", "TEXT");
-  ensureColumn(database, "users", "password_hash", "TEXT");
-  ensureColumn(database, "users", "reminder_engagement_score", "REAL DEFAULT 100");
-  ensureColumn(database, "plants", "photo_blob", "BLOB");
-  ensureColumn(database, "plants", "photo_type", "TEXT");
-  ensureColumn(database, "diagnosis_runs", "diagnosis_provider", "TEXT NOT NULL DEFAULT 'local_rule'");
+  await ensureColumn(database, "users", "latitude", "REAL");
+  await ensureColumn(database, "users", "longitude", "REAL");
+  await ensureColumn(database, "users", "age", "INTEGER");
+  await ensureColumn(database, "users", "gender", "TEXT");
+  await ensureColumn(database, "users", "email_daily_reminder", "INTEGER DEFAULT 1");
+  await ensureColumn(database, "users", "email_weekly_digest", "INTEGER DEFAULT 1");
+  await ensureColumn(database, "users", "whatsapp_number", "TEXT");
+  await ensureColumn(database, "users", "telegram_chat_id", "TEXT");
+  await ensureColumn(database, "users", "timezone", "TEXT");
+  await ensureColumn(database, "users", "country_code", "TEXT");
+  await ensureColumn(database, "users", "password_hash", "TEXT");
+  await ensureColumn(database, "users", "reminder_engagement_score", "REAL DEFAULT 100");
+  await ensureColumn(database, "plants", "photo_blob", "BLOB");
+  await ensureColumn(database, "plants", "photo_type", "TEXT");
+  await ensureColumn(database, "diagnosis_runs", "diagnosis_provider", "TEXT NOT NULL DEFAULT 'local_rule'");
   ensureColumn(
     database,
     "diagnosis_runs",
@@ -440,63 +501,82 @@ function initializeSchema(database: DatabaseSync) {
   seedKnowledgeBaseOnce(database);
 }
 
-function seedKnowledgeBaseOnce(database: DatabaseSync) {
+async function seedKnowledgeBaseOnce(database: DbHandle) {
   try {
-    const count = (
-      database.prepare(`SELECT COUNT(*) as n FROM plant_species_knowledge WHERE confidence = 'seeded'`).get() as { n: number }
-    ).n;
+    const row = await database
+      .prepare(`SELECT COUNT(*) as n FROM plant_species_knowledge WHERE confidence = 'seeded'`)
+      .get();
+    const count = (row as { n: number } | undefined)?.n ?? 0;
     if (count > 0) return; // already seeded
     // Deferred import to avoid circular dependency at module load time
-    import("@/lib/plant-enrichment").then(({ seedKnowledgeBase }) => {
-      seedKnowledgeBase();
-    }).catch(() => {/* non-critical */});
+    const { seedKnowledgeBase } = await import("@/lib/plant-enrichment");
+    await seedKnowledgeBase();
   } catch {
     // table might not exist yet in edge environments — ignore
   }
 }
 
-function ensureColumn(
-  database: DatabaseSync,
+async function ensureColumn(
+  database: DbHandle,
   table: string,
   column: string,
   definition: string,
 ) {
-  const rows = database
+  const rows = (await database
     .prepare(`PRAGMA table_info(${table})`)
-    .all() as { name: string }[];
+    .all()) as unknown as { name: string }[];
 
   if (rows.some((row) => row.name === column)) {
     return;
   }
 
-  database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  await database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
-export function getDatabase() {
-  if (databaseInstance) {
-    return databaseInstance;
+function createLibsqlClient(): Client {
+  const tursoUrl = process.env.TURSO_DATABASE_URL?.trim();
+  const tursoToken = process.env.TURSO_AUTH_TOKEN?.trim();
+
+  if (tursoUrl) {
+    return createClient({ url: tursoUrl, authToken: tursoToken });
   }
 
+  // No Turso configured: fall back to a local SQLite file via libSQL's
+  // `file:` protocol, so local dev works without a Turso account.
   const databasePath = getDatabasePath();
   migrateLegacyProjectDatabase(databasePath);
   mkdirSync(dirname(databasePath), { recursive: true });
-  databaseInstance = new DatabaseSync(databasePath);
-  initializeSchema(databaseInstance);
-
-  return databaseInstance;
+  return createClient({ url: `file:${databasePath}` });
 }
 
-export function withTransaction<T>(callback: (database: DatabaseSync) => T) {
-  const database = getDatabase();
+export async function getDatabase(): Promise<DbHandle> {
+  if (!clientInstance) {
+    clientInstance = createLibsqlClient();
+  }
+  if (!dbHandleInstance) {
+    dbHandleInstance = new DbHandle(clientInstance);
+  }
+  if (!schemaInitPromise) {
+    schemaInitPromise = initializeSchema(dbHandleInstance);
+  }
+  await schemaInitPromise;
 
-  database.exec("BEGIN");
+  return dbHandleInstance;
+}
+
+export async function withTransaction<T>(
+  callback: (database: DbHandle) => Promise<T> | T,
+): Promise<T> {
+  await getDatabase(); // ensures client + schema are ready
+  const tx = await clientInstance!.transaction("write");
+  const handle = new DbHandle(tx);
 
   try {
-    const result = callback(database);
-    database.exec("COMMIT");
+    const result = await callback(handle);
+    await tx.commit();
     return result;
   } catch (error) {
-    database.exec("ROLLBACK");
+    await tx.rollback();
     throw error;
   }
 }

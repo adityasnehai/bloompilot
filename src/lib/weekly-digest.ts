@@ -1,5 +1,5 @@
 import { getDatabase } from "@/lib/database";
-import { getGardenStats } from "@/lib/garden-stats";
+import { getGardenStats, type GardenStats } from "@/lib/garden-stats";
 import { Resend } from "resend";
 
 const resendKey = process.env.RESEND_API_KEY?.trim();
@@ -17,30 +17,30 @@ type WeekSummary = {
   lowPriorityItems: { title: string; plant_name: string }[];
 };
 
-function buildWeekSummary(userId: number): WeekSummary {
-  const db = getDatabase();
+async function buildWeekSummary(userId: number): Promise<WeekSummary> {
+  const db = await getDatabase();
 
-  const waterings = (db.prepare(
+  const waterings = (await db.prepare(
     `SELECT COUNT(*) as c FROM plant_health_events WHERE user_id = ? AND event_type = 'watered' AND datetime(created_at) >= datetime('now', '-7 days')`,
   ).get(userId) as { c: number }).c;
 
-  const skips = (db.prepare(
+  const skips = (await db.prepare(
     `SELECT COUNT(*) as c FROM plant_health_events WHERE user_id = ? AND event_type = 'water_skipped' AND datetime(created_at) >= datetime('now', '-7 days')`,
   ).get(userId) as { c: number }).c;
 
-  const diagnoses = (db.prepare(
+  const diagnoses = (await db.prepare(
     `SELECT COUNT(*) as c FROM diagnosis_runs WHERE user_id = ? AND datetime(created_at) >= datetime('now', '-7 days')`,
   ).get(userId) as { c: number }).c;
 
-  const tasksCompleted = (db.prepare(
+  const tasksCompleted = (await db.prepare(
     `SELECT COUNT(*) as c FROM care_tasks WHERE user_id = ? AND status = 'done' AND datetime(completed_at) >= datetime('now', '-7 days')`,
   ).get(userId) as { c: number }).c;
 
-  const tasksDue = (db.prepare(
+  const tasksDue = (await db.prepare(
     `SELECT COUNT(*) as c FROM care_tasks WHERE user_id = ? AND status = 'open' AND due_date <= date('now', '+7 days')`,
   ).get(userId) as { c: number }).c;
 
-  const latestPlan = db.prepare(
+  const latestPlan = await db.prepare(
     `SELECT plan_json FROM care_plans WHERE user_id = ? ORDER BY datetime(generated_at) DESC LIMIT 1`,
   ).get(userId) as { plan_json: string } | undefined;
 
@@ -71,7 +71,7 @@ function buildWeekSummary(userId: number): WeekSummary {
   return { waterings, skips, diagnoses, tasksCompleted, tasksDue, healthScore, upcomingCount, lowPriorityItems };
 }
 
-function buildDigestHtml(userName: string, summary: WeekSummary, stats: ReturnType<typeof getGardenStats>): string {
+function buildDigestHtml(userName: string, summary: WeekSummary, stats: GardenStats): string {
   return `
 <!DOCTYPE html>
 <html>
@@ -126,8 +126,8 @@ export async function sendWeeklyDigest(userId: number, userEmail: string, userNa
     return { sent: false, reason: "Email not configured" };
   }
 
-  const summary = buildWeekSummary(userId);
-  const stats = getGardenStats(userId);
+  const summary = await buildWeekSummary(userId);
+  const stats = await getGardenStats(userId);
   const html = buildDigestHtml(userName, summary, stats);
 
   try {

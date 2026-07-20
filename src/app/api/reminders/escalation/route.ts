@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const users = readAllReminderUserProfiles();
+  const users = await readAllReminderUserProfiles();
   const activeUsers = users.filter((user) => isReminderWindowActive(user));
   const runs = [];
 

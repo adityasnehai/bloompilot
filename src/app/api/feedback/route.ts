@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
@@ -32,12 +32,13 @@ export async function POST(request: NextRequest) {
 
   let plantName = body.plantName?.trim() || "Garden";
   if (body.plantId) {
-    const plant = getDatabase().prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(body.plantId, identity.id) as { nickname: string } | undefined;
+    const db = await getDatabase();
+    const plant = await db.prepare(`SELECT nickname FROM plants WHERE id = ? AND user_id = ?`).get(body.plantId, identity.id) as { nickname: string } | undefined;
     if (!plant) return NextResponse.json({ error: "Plant not found" }, { status: 404 });
     plantName = plant.nickname;
   }
 
-  logActionFeedback(
+  await logActionFeedback(
     identity.id,
     body.plantId ?? null,
     plantName,

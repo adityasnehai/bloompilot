@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = getDatabase();
-  const users = db
+  const db = await getDatabase();
+  const users = await db
     .prepare(`SELECT id, email, name FROM users WHERE onboarded = 1 AND (email_weekly_digest IS NULL OR email_weekly_digest = 1)`)
     .all() as { id: number; email: string; name: string }[];
 

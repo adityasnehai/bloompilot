@@ -18,7 +18,7 @@ export async function GET() {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? new Response("Unauthorized", { status: 401 });
 
-  const identity = readWorkspaceIdentityByEmail(session.email);
+  const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
     return new Response("Workspace not found", { status: 404 });
   }

@@ -10,9 +10,9 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function issuePasswordResetToken(email: string) {
-  const database = getDatabase();
-  const user = database
+export async function issuePasswordResetToken(email: string) {
+  const database = await getDatabase();
+  const user = await database
     .prepare(`SELECT id, email, name FROM users WHERE email = ?`)
     .get(email.trim().toLowerCase()) as { id: number; email: string; name: string } | undefined;
 
@@ -22,10 +22,10 @@ export function issuePasswordResetToken(email: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(now.getTime() + TOKEN_TTL_MS).toISOString();
 
-  database
+  await database
     .prepare(`DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at <= ? OR used_at IS NOT NULL`)
     .run(user.id, now.toISOString());
-  database
+  await database
     .prepare(
       `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?)`,
@@ -63,10 +63,10 @@ export async function sendPasswordResetEmail(params: { to: string; name: string;
   }
 }
 
-export function resetPassword(token: string, password: string) {
+export async function resetPassword(token: string, password: string) {
   const now = new Date().toISOString();
-  return withTransaction((database) => {
-    const row = database
+  return withTransaction(async (database) => {
+    const row = await database
       .prepare(
         `SELECT id, user_id FROM password_reset_tokens
          WHERE token_hash = ? AND used_at IS NULL AND expires_at > ?`,
@@ -75,12 +75,12 @@ export function resetPassword(token: string, password: string) {
 
     if (!row) return false;
 
-    const result = database
+    const result = await database
       .prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`)
       .run(hashPassword(password), now, row.user_id) as { changes: number };
     if (result.changes !== 1) return false;
 
-    database
+    await database
       .prepare(`UPDATE password_reset_tokens SET used_at = ? WHERE id = ? AND used_at IS NULL`)
       .run(now, row.id);
     return true;

@@ -18,20 +18,20 @@ type PlantNoteRow = {
   created_at: string;
 };
 
-export function addPlantNote(userId: number, plantId: string, plantName: string, body: string): PlantNote {
-  const db = getDatabase();
+export async function addPlantNote(userId: number, plantId: string, plantName: string, body: string): Promise<PlantNote> {
+  const db = await getDatabase();
   const id = crypto.randomUUID();
   const createdAt = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO plant_notes (id, user_id, plant_id, plant_name, body, created_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, userId, plantId, plantName, body.trim(), createdAt);
   return { id, userId, plantId, plantName, body: body.trim(), createdAt };
 }
 
-export function getPlantNotes(userId: number, plantId: string, limit = 20): PlantNote[] {
-  const db = getDatabase();
-  const rows = db
+export async function getPlantNotes(userId: number, plantId: string, limit = 20): Promise<PlantNote[]> {
+  const db = await getDatabase();
+  const rows = await db
     .prepare(
       `SELECT * FROM plant_notes WHERE user_id = ? AND plant_id = ?
        ORDER BY datetime(created_at) DESC LIMIT ?`,
@@ -40,9 +40,9 @@ export function getPlantNotes(userId: number, plantId: string, limit = 20): Plan
   return rows.map(rowToNote);
 }
 
-export function deletePlantNote(userId: number, noteId: string): boolean {
-  const db = getDatabase();
-  const result = db
+export async function deletePlantNote(userId: number, noteId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = await db
     .prepare(`DELETE FROM plant_notes WHERE id = ? AND user_id = ?`)
     .run(noteId, userId);
   return ((result as { changes: number }).changes) > 0;

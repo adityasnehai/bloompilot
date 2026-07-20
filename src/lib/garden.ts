@@ -216,8 +216,8 @@ export async function readGardenState() {
     return createEmptyGardenState();
   }
 
-  const database = getDatabase();
-  const plants = database
+  const database = await getDatabase();
+  const plants = await database
     .prepare(
       `
         SELECT id, nickname, species, placement, sunlight,
@@ -228,7 +228,7 @@ export async function readGardenState() {
       `,
     )
     .all(userId) as PlantRow[];
-  const tasks = database
+  const tasks = await database
     .prepare(
       `
         SELECT id, plant_id, title, kind, status, due_date, created_at, completed_at
@@ -238,7 +238,7 @@ export async function readGardenState() {
       `,
     )
     .all(userId) as TaskRow[];
-  const activities = database
+  const activities = await database
     .prepare(
       `
         SELECT id, type, title, detail, created_at, plant_id
@@ -297,10 +297,10 @@ export async function writeGardenState(state: GardenState) {
 
   const trimmedState = trimGardenState(state);
 
-  withTransaction((database) => {
+  await withTransaction(async (database) => {
     // Preserve existing photos before delete-reinsert
     type PhotoRow = { id: string; photo_blob: Uint8Array | null; photo_type: string | null };
-    const existingPhotos = database
+    const existingPhotos = await database
       .prepare(`SELECT id, photo_blob, photo_type FROM plants WHERE user_id = ?`)
       .all(userId) as PhotoRow[];
     const photoMap = new Map<string, { blob: Uint8Array | null; type: string | null }>();
@@ -308,25 +308,25 @@ export async function writeGardenState(state: GardenState) {
       if (row.photo_blob) photoMap.set(row.id, { blob: row.photo_blob, type: row.photo_type });
     }
 
-    database.prepare(`DELETE FROM plants WHERE user_id = ?`).run(userId);
-    database.prepare(`DELETE FROM care_tasks WHERE user_id = ?`).run(userId);
-    database.prepare(`DELETE FROM activities WHERE user_id = ?`).run(userId);
+    await database.prepare(`DELETE FROM plants WHERE user_id = ?`).run(userId);
+    await database.prepare(`DELETE FROM care_tasks WHERE user_id = ?`).run(userId);
+    await database.prepare(`DELETE FROM activities WHERE user_id = ?`).run(userId);
 
-    const insertPlant = database.prepare(`
+    const insertPlant = await database.prepare(`
       INSERT INTO plants (
         id, user_id, nickname, species, placement, sunlight,
         watering_interval_days, notes, added_at, last_watered_at, photo_blob, photo_type
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertTask = database.prepare(`
+    const insertTask = await database.prepare(`
       INSERT INTO care_tasks (
         id, user_id, plant_id, title, kind, status,
         due_date, created_at, completed_at
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertActivity = database.prepare(`
+    const insertActivity = await database.prepare(`
       INSERT INTO activities (
         id, user_id, type, title, detail, created_at, plant_id
       )
@@ -335,7 +335,7 @@ export async function writeGardenState(state: GardenState) {
 
     for (const plant of trimmedState.plants) {
       const photo = photoMap.get(plant.id);
-      insertPlant.run(
+      await insertPlant.run(
         plant.id,
         userId,
         plant.nickname,
@@ -352,7 +352,7 @@ export async function writeGardenState(state: GardenState) {
     }
 
     for (const task of trimmedState.tasks) {
-      insertTask.run(
+      await insertTask.run(
         task.id,
         userId,
         task.plantId,
@@ -366,7 +366,7 @@ export async function writeGardenState(state: GardenState) {
     }
 
     for (const activity of trimmedState.activities) {
-      insertActivity.run(
+      await insertActivity.run(
         activity.id,
         userId,
         activity.type,
@@ -386,10 +386,10 @@ export async function clearGardenState() {
     return;
   }
 
-  withTransaction((database) => {
-    database.prepare(`DELETE FROM plants WHERE user_id = ?`).run(userId);
-    database.prepare(`DELETE FROM care_tasks WHERE user_id = ?`).run(userId);
-    database.prepare(`DELETE FROM activities WHERE user_id = ?`).run(userId);
+  await withTransaction(async (database) => {
+    await database.prepare(`DELETE FROM plants WHERE user_id = ?`).run(userId);
+    await database.prepare(`DELETE FROM care_tasks WHERE user_id = ?`).run(userId);
+    await database.prepare(`DELETE FROM activities WHERE user_id = ?`).run(userId);
   });
 }
 
