@@ -259,11 +259,28 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
   // Keep the workspace actionable when the external planner fails or omits a plant.
   // These rules use the same saved context and weather evidence, not mock data.
   const fallbackActions = buildRawCareActions(context);
+
+  // water and skip_water are mutually exclusive for the same plant on the same
+  // day. The fallback's skip_water is a deterministic check against live
+  // rain/soil-moisture data — if it fires, a planner-proposed "water" for that
+  // same plant/date must be dropped, not merged alongside it as contradictory
+  // advice (the planner's own baseline-driven watering suggestion can still
+  // mention the rain in its reasoning without actually weighing it).
+  const skipWaterKeys = new Set(
+    fallbackActions
+      .filter((action) => action.type === "skip_water")
+      .map((action) => `${action.plant_id ?? "garden"}|${action.due_date}`),
+  );
+  const plannerActionsResolved = plannerActions.filter((action) => {
+    if (action.type !== "water") return true;
+    return !skipWaterKeys.has(`${action.plant_id ?? "garden"}|${action.due_date}`);
+  });
+
   const coveredActionKeys = new Set(
-    plannerActions.map((action) => `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`),
+    plannerActionsResolved.map((action) => `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`),
   );
   const rawActions = [
-    ...plannerActions,
+    ...plannerActionsResolved,
     ...fallbackActions.filter((action) => {
       // Only skip a fallback action when the planner already produced that exact
       // (plant, action type, date) combination — not merely because the planner
@@ -276,7 +293,7 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
       return true;
     }),
   ];
-  fallbackUsed = fallbackUsed || plannerActions.length === 0 || rawActions.length > plannerActions.length;
+  fallbackUsed = fallbackUsed || plannerActions.length === 0 || rawActions.length > plannerActionsResolved.length;
 
   emitProgress(state.agentRunId, "planner");
 
