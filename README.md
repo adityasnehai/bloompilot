@@ -134,17 +134,17 @@ The full agentic flow — the 7-node LangGraph pipeline, the ReAct tool-calling 
 
 ```mermaid
 flowchart TD
-    Start(["Trigger: dashboard load, manual generate, or cron"]) --> CB["Context Builder Agent<br/>loads plants, location, garden type, studio layout"]
+    Start(["Trigger - dashboard load, manual generate, or cron"]) --> CB["Context Builder Agent<br/>loads plants, location, garden type, studio layout"]
     CB --> ENV["Environment Agent<br/>live weather + risk flags via Open-Meteo"]
-    ENV --> PK["Plant Knowledge Agent<br/>species care baselines — Perenual / Trefle, cached in Turso"]
+    ENV --> PK["Plant Knowledge Agent<br/>species care baselines, Perenual and Trefle, cached in Turso"]
     PK --> RP["ReAct Care Planner Agent"]
     RP --> LLM
 
-    subgraph REACT["ReAct Tool-Calling Loop — max 10 iterations, 60s wall-clock budget"]
+    subgraph REACT["ReAct Tool-Calling Loop, max 10 iterations, 60s wall-clock budget"]
         direction TB
-        LLM["LLM call: GPT-4.1-mini + tools"] --> TC{"Tool call requested?"}
-        TC -->|"no / stop"| DONELOOP["Loop ends"]
-        TC -->|"yes"| DUP{"Same tool + args<br/>already called this run?"}
+        LLM["LLM call, GPT-4.1-mini plus tools"] --> TC{"Tool call requested?"}
+        TC -->|"no or stop"| DONELOOP["Loop ends"]
+        TC -->|"yes"| DUP{"Same tool and args<br/>already called this run?"}
         DUP -->|"yes"| WARN["Log repeated-call warning<br/>tell model to use the existing result"]
         WARN --> LLM
         DUP -->|"no"| WHICH{"Which tool?"}
@@ -157,22 +157,22 @@ flowchart TD
         T2 --> LLM
         T3 --> LLM
         T4 --> LLM
-        VAL -->|"no — partial or invalid"| REVISE["Push correction message,<br/>loop back for a fixed submission"]
+        VAL -->|"no, partial or invalid"| REVISE["Push correction message,<br/>loop back for a fixed submission"]
         REVISE --> LLM
         VAL -->|"yes"| ACCEPT["Actions accepted"]
     end
 
-    RP -->|"LLM call throws"| FAIL["Log: care_planner_llm_failed_using_fallback"]
+    RP -->|"LLM call throws"| FAIL["Log fallback event<br/>care_planner_llm_failed_using_fallback"]
     FAIL --> FALLBACK
-    DONELOOP -->|"cap hit, no submission"| GAVEUP["Log: care_planner_gave_up_zero_actions"]
-    GAVEUP --> FALLBACK["Deterministic fallback rulebook<br/>buildRawCareActions — same context + weather, no LLM"]
+    DONELOOP -->|"cap hit, no submission"| GAVEUP["Log giveup event<br/>care_planner_gave_up_zero_actions"]
+    GAVEUP --> FALLBACK["Deterministic fallback rulebook<br/>buildRawCareActions, same context and weather, no LLM"]
     ACCEPT --> MERGE["Merge planner actions with<br/>non-duplicate fallback actions"]
     FALLBACK --> MERGE
 
-    MERGE --> EV["Evidence Agent<br/>requires a real reason + evidence_refs<br/>caps confidence when evidence is generic, not type-specific"]
+    MERGE --> EV["Evidence Agent<br/>requires a real reason and evidence_refs<br/>caps confidence when evidence is generic, not type-specific"]
     EV --> APPROVED["Approved actions"]
 
-    APPROVED --> REM["Reminder Agent<br/>confidence >= 0.65, channel + reminder-window checks"]
+    APPROVED --> REM["Reminder Agent<br/>confidence 0.65 or higher, channel and window checks"]
     REM --> READY["Reminder-ready actions"]
 
     APPROVED --> DASH["Dashboard Agent<br/>assembles the final CarePlanOutput"]
@@ -180,12 +180,7 @@ flowchart TD
     DASH --> OUT(["CarePlanOutput saved to care_plans table"])
 
     OUT --> UI["Dashboard UI"]
-    OUT --> DELIVER["Reminder delivery<br/>push · email · Telegram"]
-
-    style REACT fill:#0d1117,stroke:#8fd15c,stroke-width:1px
-    style FALLBACK fill:#2a1a1a,stroke:#e0a458
-    style EV fill:#12241a,stroke:#8fd15c
-    style REM fill:#12241a,stroke:#8fd15c
+    OUT --> DELIVER["Reminder delivery<br/>push, email, Telegram"]
 ```
 
 ### The 7-node pipeline
