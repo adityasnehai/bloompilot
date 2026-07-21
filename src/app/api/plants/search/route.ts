@@ -61,6 +61,12 @@ function uniqueSuggestions(items: PlantSuggestion[]) {
   return unique;
 }
 
+function hasWholeWord(text: string, query: string): boolean {
+  if (!query) return false;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`).test(text);
+}
+
 function scoreSuggestion(item: INaturalistTaxon, query: string) {
   const q = query.toLowerCase();
   const common = (item.preferred_common_name ?? "").toLowerCase();
@@ -79,15 +85,29 @@ function scoreSuggestion(item: INaturalistTaxon, query: string) {
     return 0;
   }
 
+  // Common names are frequently multi-word ("Sweet basil") or compound
+  // ("basil-thyme", an unrelated herb). A plain startsWith/includes score
+  // systematically favors compound names that happen to begin with the
+  // query over the actual well-known plant, where the query is a separate
+  // word further in. Reward an exact or whole-word match specifically,
+  // and lean more on real-world prominence (observation count) as the
+  // tiebreaker between multiple textually-plausible matches, since a
+  // search for a common name almost always means the widely-known plant.
   let score = 0;
-  if (common.startsWith(q)) score += 120;
-  if (matched.startsWith(q)) score += 100;
-  if (common.includes(q)) score += 80;
-  if (matched.includes(q)) score += 75;
-  if (species.startsWith(q)) score += 40;
-  if (species.includes(q)) score += 20;
+  if (common === q) score += 200;
+  else if (hasWholeWord(common, q)) score += 90;
+  else if (common.startsWith(q)) score += 60;
+  else if (common.includes(q)) score += 40;
+
+  if (matched === q) score += 60;
+  else if (matched.startsWith(q)) score += 50;
+  else if (matched.includes(q)) score += 35;
+
+  if (species.startsWith(q)) score += 20;
+  else if (species.includes(q)) score += 10;
+
   if (item.rank === "species") score += 35;
-  score += Math.min(40, Math.log10(obs + 1) * 8);
+  score += Math.min(80, Math.log10(obs + 1) * 18);
 
   return score;
 }
