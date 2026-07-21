@@ -1,10 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
-import { logActionFeedback, type FeedbackValue } from "@/lib/action-feedback";
+import { logActionFeedback } from "@/lib/action-feedback";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
-export async function POST(request: NextRequest) {
+const feedbackSchema = z.object({
+  plantId: z.string().optional(),
+  plantName: z.string().optional(),
+  actionType: z.string().min(1),
+  actionTitle: z.string().min(1),
+  feedback: z.enum(["positive", "negative"]),
+});
+
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -13,22 +23,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  let body: {
-    plantId?: string;
-    plantName: string;
-    actionType: string;
-    actionTitle: string;
-    feedback: FeedbackValue;
-  };
-  try {
-    body = (await request.json()) as typeof body;
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if ((body.feedback !== "positive" && body.feedback !== "negative") || !body.actionType || !body.actionTitle) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, feedbackSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
   let plantName = body.plantName?.trim() || "Garden";
   if (body.plantId) {
@@ -48,4 +45,4 @@ export async function POST(request: NextRequest) {
   );
 
   return NextResponse.json({ ok: true });
-}
+});

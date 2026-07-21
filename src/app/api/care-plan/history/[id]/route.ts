@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
 type PlanRow = { id: string; generated_at: string; plan_json: string };
 
-export async function GET(
+export const GET = withApiHandler(async (
   _req: NextRequest,
   context: { params: Promise<{ id: string }> },
-) {
+) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -30,4 +31,4 @@ export async function GET(
   } catch {
     return NextResponse.json({ error: "Malformed plan" }, { status: 500 });
   }
-}
+});

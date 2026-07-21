@@ -13,8 +13,20 @@ import {
   type ChatMessage,
   type ChatToolDefinition,
 } from "@/lib/openai";
+import { logger } from "@/lib/logger";
 
 const MAX_ITERATIONS = 10;
+// Overall wall-clock budget for the whole planning loop, independent of the per-call
+// OpenAI timeout — bounds worst-case latency even if every one of MAX_ITERATIONS calls
+// individually stays under its own timeout.
+const MAX_RUN_MS = 60_000;
+
+function stableArgsSignature(toolName: string, args: Record<string, unknown>): string {
+  const sortedKeys = Object.keys(args).sort();
+  const normalized: Record<string, unknown> = {};
+  for (const key of sortedKeys) normalized[key] = args[key];
+  return `${toolName}:${JSON.stringify(normalized)}`;
+}
 
 type RawActionInput = {
   plant_id: string;
@@ -344,6 +356,12 @@ function buildActionEvidence(raw: RawActionInput, context: ContextJson) {
   const weather = context.environment;
   const plantFacts = `${plant.common_name} (${plant.species ?? "species not confirmed"}) is in ${plant.placement} with ${plant.sunlight.label.toLowerCase()} light`;
   let actionFact = "Use the saved plant context when carrying out this action.";
+  // Tracks whether actionFact cites a real, action-type-specific data point (weather
+  // reading, saved interval, confirmed species gap) rather than just restating the
+  // plant's identity. Used to keep confidence honest when the model's action doesn't
+  // line up with any specific evidence this function could find for it — e.g. it
+  // requested "protect" but there's no active frost-risk flag to justify it.
+  let grounded = true;
 
   if (raw.type === "shade" && weather.uv_index !== null) {
     actionFact = `UV is ${weather.uv_index}; ${plantFacts}, so filtered shade is the relevant response.`;
@@ -359,19 +377,33 @@ function buildActionEvidence(raw: RawActionInput, context: ContextJson) {
     actionFact = `${plant.common_name} does not have a confirmed species, so species-specific care remains limited.`;
   } else {
     actionFact = `${plantFacts}.`;
+    grounded = false;
   }
 
   return {
     type: "plant_context",
     source: "BloomPilot context builder",
     supports: actionFact,
+    grounded,
   };
 }
+
+// Ceiling applied when the model's own reasoning is the only thing backing an action —
+// buildActionEvidence found no plant-specific data point (weather flag, saved interval,
+// confirmed species gap) matching the requested action type. Keeps "confidence" honest:
+// the reminder pipeline gates real delivery on confidence, so an ungrounded claim
+// shouldn't be able to reach a user's phone with full confidence just because the model
+// said it plausibly.
+const UNGROUNDED_CONFIDENCE_CEILING = 0.5;
 
 function enrichAction(raw: RawActionInput, context: ContextJson): CarePlanAction {
   const today = new Date().toISOString().slice(0, 10);
   const actionEvidence = buildActionEvidence(raw, context);
   const reason = [raw.reason.trim(), actionEvidence?.supports].filter(Boolean).join(" ");
+  const requestedConfidence = Math.min(1, Math.max(0, raw.confidence));
+  const confidence = actionEvidence?.grounded === false
+    ? Math.min(requestedConfidence, UNGROUNDED_CONFIDENCE_CEILING)
+    : requestedConfidence;
   return {
     id: crypto.randomUUID(),
     plant_id: raw.plant_id,
@@ -387,11 +419,11 @@ function enrichAction(raw: RawActionInput, context: ContextJson): CarePlanAction
         source: "BloomPilot ReAct Care Planner",
         supports: raw.reason,
       },
-      ...(actionEvidence ? [actionEvidence] : []),
+      ...(actionEvidence ? [{ type: actionEvidence.type, source: actionEvidence.source, supports: actionEvidence.supports }] : []),
     ],
     source_agents: ["ReAct Care Planner"],
     status: "approved",
-    confidence: Math.min(1, Math.max(0, raw.confidence)),
+    confidence,
   };
 }
 
@@ -461,8 +493,16 @@ export async function runReActCarePlanner(
   let toolCallCount = 0;
   let iterations = 0;
   let finalActions: CarePlanAction[] = [];
+  const seenToolCalls = new Map<string, number>();
+  const startedAt = Date.now();
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    if (Date.now() - startedAt > MAX_RUN_MS) {
+      logger.warn("care_planner_wall_clock_budget_exceeded", {
+        userId, iterations, toolCallCount, elapsedMs: Date.now() - startedAt,
+      });
+      break;
+    }
     iterations++;
     const result = await requestOpenAIChat({ messages, tools: TOOLS, maxTokens: 3000 });
 
@@ -512,6 +552,30 @@ export async function runReActCarePlanner(
         if (finalActions.length > 0 && rejectedCount === 0) {
           return { actions: finalActions, toolCallCount, iterations };
         }
+        // Needs revision (partial/empty submission): the tool response above already
+        // told the model what to fix. Loop back for a corrected submit_care_plan call
+        // instead of falling through to executeTool, which doesn't recognize this tool
+        // name and would push a second "tool" message for the same tool_call_id —
+        // an invalid transcript that breaks the next OpenAI request.
+        continue;
+      }
+
+      const signature = stableArgsSignature(toolCall.function.name, args);
+      const repeatCount = (seenToolCalls.get(signature) ?? 0) + 1;
+      seenToolCalls.set(signature, repeatCount);
+
+      if (repeatCount > 1) {
+        logger.warn("care_planner_repeated_tool_call", {
+          userId, tool: toolCall.function.name, repeatCount, iteration: i,
+        });
+        messages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: JSON.stringify({
+            error: `You already called ${toolCall.function.name} with these exact arguments and have that result. Re-calling it will not produce new information — use the result you already have, try a different tool, or call submit_care_plan now with what you know.`,
+          }),
+        });
+        continue;
       }
 
       const toolResult = await executeTool(
@@ -527,6 +591,12 @@ export async function runReActCarePlanner(
         content: JSON.stringify(toolResult),
       });
     }
+  }
+
+  if (finalActions.length === 0 && context.plants.length > 0) {
+    logger.warn("care_planner_iteration_cap_reached_without_submission", {
+      userId, iterations, toolCallCount,
+    });
   }
 
   return { actions: finalActions, toolCallCount, iterations };

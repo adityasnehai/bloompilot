@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
@@ -11,7 +12,7 @@ type HistoryRow = {
   plan_json: string;
 };
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -57,4 +58,4 @@ export async function GET() {
   });
 
   return NextResponse.json({ plans });
-}
+});

@@ -1,10 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { addPlantNote, deletePlantNote, getPlantNotes } from "@/lib/plant-notes";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
-export async function GET(request: NextRequest) {
+const noteSchema = z.object({
+  plantId: z.string().optional(),
+  plantName: z.string().optional(),
+  body: z.string().optional(),
+});
+
+export const GET = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -14,16 +22,17 @@ export async function GET(request: NextRequest) {
   if (!plantId) return NextResponse.json({ error: "plantId required" }, { status: 400 });
 
   return NextResponse.json({ notes: await getPlantNotes(identity.id, plantId) });
-}
+});
 
-export async function POST(request: NextRequest) {
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
-  const body = await request.json().catch(() => null) as { plantId?: string; plantName?: string; body?: string } | null;
-  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const parsed = await parseJsonBody(request, noteSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   if (!body.plantId || !body.body?.trim()) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
@@ -34,9 +43,9 @@ export async function POST(request: NextRequest) {
 
   const note = await addPlantNote(identity.id, body.plantId, plant.nickname, body.body);
   return NextResponse.json({ note });
-}
+});
 
-export async function DELETE(request: NextRequest) {
+export const DELETE = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -47,4 +56,4 @@ export async function DELETE(request: NextRequest) {
 
   const deleted = await deletePlantNote(identity.id, noteId);
   return NextResponse.json({ ok: deleted });
-}
+});

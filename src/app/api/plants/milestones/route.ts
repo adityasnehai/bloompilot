@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
 import { randomUUID } from "node:crypto";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
 const STAGES = ["seedling", "sprout", "growing", "mature", "flowering", "dormant"] as const;
-type Stage = (typeof STAGES)[number];
 
 type MilestoneRow = {
   id: string;
@@ -18,7 +19,13 @@ type MilestoneRow = {
   recorded_at: string;
 };
 
-export async function GET(req: NextRequest) {
+const milestonePostSchema = z.object({
+  plantId: z.string().optional(),
+  stage: z.enum(STAGES).optional(),
+  note: z.string().optional(),
+});
+
+export const GET = withApiHandler(async (req: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -35,17 +42,18 @@ export async function GET(req: NextRequest) {
     .all(identity.id, plantId) as MilestoneRow[];
 
   return NextResponse.json({ milestones: rows });
-}
+});
 
-export async function POST(req: NextRequest) {
+export const POST = withApiHandler(async (req: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const body = await req.json().catch(() => null) as { plantId?: string; stage?: Stage; note?: string } | null;
-  const { plantId, stage, note } = body ?? {};
+  const parsed = await parseJsonBody(req, milestonePostSchema);
+  if (!parsed.ok) return parsed.response;
+  const { plantId, stage, note } = parsed.data;
 
   if (!plantId || !stage || !STAGES.includes(stage)) {
     return NextResponse.json({ error: "plantId and valid stage required" }, { status: 400 });
@@ -62,9 +70,9 @@ export async function POST(req: NextRequest) {
   ).run(id, identity.id, plantId, plant.nickname, stage, note?.trim().slice(0, 500) || null, recordedAt);
 
   return NextResponse.json({ milestone: { id, plantId, plantName: plant.nickname, stage, note: note?.trim().slice(0, 500) || undefined, recordedAt } });
-}
+});
 
-export async function DELETE(req: NextRequest) {
+export const DELETE = withApiHandler(async (req: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -79,4 +87,4 @@ export async function DELETE(req: NextRequest) {
   await db.prepare(`DELETE FROM plant_milestones WHERE id = ? AND user_id = ?`).run(milestoneId, identity.id);
 
   return NextResponse.json({ ok: true });
-}
+});

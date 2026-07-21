@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { logHealthEvent, type HealthEventType } from "@/lib/plant-memory";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
 const VALID_EVENT_TYPES: HealthEventType[] = [
   "watered",
@@ -21,7 +23,14 @@ const EVENT_DETAIL: Record<HealthEventType, string> = {
   diagnosed:     "Diagnosis run",
 };
 
-export async function POST(request: NextRequest) {
+const logCareSchema = z.object({
+  plantId: z.string().optional(),
+  plantName: z.string().optional(),
+  eventType: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -30,14 +39,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => null) as {
-    plantId?: string;
-    plantName?: string;
-    eventType?: string;
-    note?: string;
-  } | null;
+  const parsed = await parseJsonBody(request, logCareSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
 
-  if (!body || !body.plantId || !body.eventType) {
+  if (!body.plantId || !body.eventType) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
@@ -66,4 +72,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true });
-}
+});

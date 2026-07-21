@@ -9,10 +9,11 @@ import {
 import { getDatabase } from "@/lib/database";
 import { readWeatherSnapshot } from "@/lib/weather";
 import { getGardenHealthHistory } from "@/lib/plant-memory";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -22,9 +23,9 @@ export async function GET() {
   if (stored) return NextResponse.json({ advice: stored, cached: true });
 
   return NextResponse.json({ advice: null, cached: false });
-}
+});
 
-export async function POST() {
+export const POST = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -102,4 +103,4 @@ export async function POST() {
   }
 
   return NextResponse.json({ advice, cached: false });
-}
+});

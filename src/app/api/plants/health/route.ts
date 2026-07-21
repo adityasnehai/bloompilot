@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getPlantHealthSummary, getPlantHealthHistory } from "@/lib/plant-memory";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: NextRequest) {
+export const GET = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -21,4 +22,4 @@ export async function GET(request: NextRequest) {
   const history = await getPlantHealthHistory(identity.id, plantId, 15);
 
   return NextResponse.json({ summary, history });
-}
+});

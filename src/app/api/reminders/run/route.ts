@@ -5,8 +5,9 @@ import {
   runReminderSweep,
 } from "@/lib/reminders";
 import { requireApiSession } from "@/lib/api-session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const { response } = await requireApiSession();
   if (response) return response;
 
@@ -34,4 +35,4 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json({ ...run, source: "local" });
-}
+});

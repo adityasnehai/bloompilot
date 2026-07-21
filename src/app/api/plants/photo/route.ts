@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
 const MAX_BYTES = 4 * 1024 * 1024;
 
 // POST /api/plants/photo?plantId=xxx  (multipart: photo field)
-export async function POST(request: NextRequest) {
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -47,10 +48,10 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, photoUrl: `/api/plants/photo?plantId=${plantId}` });
-}
+});
 
 // HEAD /api/plants/photo?plantId=xxx  (used by client to check existence without downloading)
-export async function HEAD(request: NextRequest) {
+export const HEAD = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return new Response(null, { status: 401 });
 
@@ -66,10 +67,10 @@ export async function HEAD(request: NextRequest) {
     .get(plantId, identity.id);
 
   return new Response(null, { status: row ? 200 : 404 });
-}
+});
 
 // GET /api/plants/photo?plantId=xxx
-export async function GET(request: NextRequest) {
+export const GET = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -92,10 +93,10 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "private, max-age=86400",
     },
   });
-}
+});
 
 // DELETE /api/plants/photo?plantId=xxx
-export async function DELETE(request: NextRequest) {
+export const DELETE = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -110,4 +111,4 @@ export async function DELETE(request: NextRequest) {
     .run(plantId, identity.id);
 
   return NextResponse.json({ ok: true });
-}
+});

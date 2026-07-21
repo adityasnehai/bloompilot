@@ -4,10 +4,11 @@ import {
   readAllReminderUserProfiles,
   runReminderSweepForUserId,
 } from "@/lib/reminders";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
-export async function GET(req: NextRequest) {
+export const GET = withApiHandler(async (req: NextRequest) => {
   const authHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (!cronSecret) {
@@ -47,4 +48,4 @@ export async function GET(req: NextRequest) {
     processed_runs: runs.length,
     runs,
   });
-}
+});

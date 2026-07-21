@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { withApiHandler, clientIp, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 type PlantSuggestion = {
   commonName: string;
@@ -203,7 +205,10 @@ async function suggestPlantsWithGbif(query: string) {
 
 // Public endpoint — only queries public taxonomy APIs (iNaturalist / GBIF),
 // no user data. Open so the public Garden Studio search works without login.
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
+  const limit = await checkRateLimit("plants_search", clientIp(request), 60, 60);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
+
   const query = new URL(request.url).searchParams.get("q") ?? "";
   const normalized = query.trim().toLowerCase();
 
@@ -219,4 +224,4 @@ export async function GET(request: Request) {
 
   const results = uniqueSuggestions([...iNatResults, ...gbifResults]).slice(0, 8);
   return NextResponse.json({ results });
-}
+});

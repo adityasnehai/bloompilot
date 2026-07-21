@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { withApiHandler } from "@/lib/api-handler";
 
 // Proxies iNaturalist / external plant images so Three.js can load them
 // from the same origin — no CORS issues when creating WebGL textures.
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const url = new URL(request.url).searchParams.get("url");
   if (!url) return NextResponse.json({ error: "missing url" }, { status: 400 });
 
@@ -54,4 +55,4 @@ export async function GET(request: Request) {
       "Access-Control-Allow-Origin": "*",
     },
   });
-}
+});

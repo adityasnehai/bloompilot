@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { readLatestCarePlan } from "@/lib/care-plan-engine";
@@ -9,6 +10,20 @@ import { readWeatherSnapshot } from "@/lib/weather";
 import { readGardenState } from "@/lib/garden";
 import { readRecentDiagnosisRuns } from "@/lib/diagnosis";
 import { readCurrentReminderChannelReadiness, readLatestReminderRun } from "@/lib/reminders";
+import { withApiHandler, parseJsonBody, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const chatRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().trim().min(1).max(4000),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +94,7 @@ Rules:
 - Today's date is ${new Date().toISOString().slice(0, 10)}.`;
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -88,16 +103,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => null) as { messages?: unknown } | null;
-  if (!body || !Array.isArray(body.messages) || body.messages.length === 0 || body.messages.length > 20) {
-    return NextResponse.json({ error: "messages required" }, { status: 400 });
-  }
-  const messages = body.messages.filter((message): message is ChatMessage => {
-    if (!message || typeof message !== "object") return false;
-    const candidate = message as { role?: unknown; content?: unknown };
-    return (candidate.role === "user" || candidate.role === "assistant") && typeof candidate.content === "string" && candidate.content.trim().length > 0 && candidate.content.length <= 4000;
-  });
-  if (messages.length !== body.messages.length) return NextResponse.json({ error: "Invalid message format" }, { status: 400 });
+  const limit = await checkRateLimit("chat", session.email, 20, 300);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
+
+  const parsed = await parseJsonBody(request, chatRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const messages = parsed.data.messages as ChatMessage[];
 
   const db = await getDatabase();
   type UserRow = { name: string; location: string; garden_type: string; latitude: number | null; longitude: number | null };
@@ -239,4 +250,4 @@ export async function POST(request: NextRequest) {
       Connection: "keep-alive",
     },
   });
-}
+});

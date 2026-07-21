@@ -1,13 +1,20 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { getCurrentWorkspaceUserId } from "@/lib/garden";
 import { readGardenState } from "@/lib/garden";
 import { createInitialStudioLayout, getStudioLayout, saveStudioLayout, type LayoutPlant } from "@/lib/studio-layout";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
 const VALID_TYPES = new Set(["balcony", "terrace", "indoor", "backyard"]);
 
+const layoutSchema = z.object({
+  gardenType: z.string().optional(),
+  plants: z.array(z.unknown()),
+});
+
 // GET /api/garden-studio/layout?gardenType=balcony
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const { response } = await requireApiSession({ requireOnboarded: false });
   if (response) return response;
 
@@ -48,18 +55,19 @@ export async function GET(request: Request) {
     savedAt: null,
     source: "empty-garden",
   });
-}
+});
 
 // POST /api/garden-studio/layout  — body: { gardenType, plants }
-export async function POST(request: Request) {
+export const POST = withApiHandler(async (request: Request) => {
   const { response } = await requireApiSession({ requireOnboarded: false });
   if (response) return response;
 
   const userId = await getCurrentWorkspaceUserId();
   if (!userId) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-  const body = await request.json().catch(() => null) as { gardenType?: string; plants?: unknown[] } | null;
-  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const parsed = await parseJsonBody(request, layoutSchema);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.data;
   const gardenType = body.gardenType ?? "balcony";
 
   if (!VALID_TYPES.has(gardenType)) {
@@ -115,4 +123,4 @@ export async function POST(request: Request) {
   const savedAt = await saveStudioLayout(userId, gardenType, plants);
 
   return NextResponse.json({ ok: true, saved: plants.length, savedAt });
-}
+});

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { createDiagnosisRun } from "@/lib/diagnosis";
+import { withApiHandler, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { response } = await requireApiSession();
 
   if (response) {
@@ -14,14 +16,21 @@ export async function GET() {
     accepts: "multipart/form-data",
     fields: ["plantId", "photo", "observation"],
   });
-}
+});
 
-export async function POST(request: Request) {
-  const { response } = await requireApiSession();
+export const POST = withApiHandler(async (request: Request) => {
+  const { session, response } = await requireApiSession();
 
   if (response) {
     return response;
   }
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Each call is a metered Kindwise disease-diagnosis API call plus a real photo upload.
+  const limit = await checkRateLimit("diagnosis_analyze", session.email, 10, 300);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
 
   let formData: FormData;
   try {
@@ -62,4 +71,4 @@ export async function POST(request: Request) {
     ok: true,
     run,
   });
-}
+});

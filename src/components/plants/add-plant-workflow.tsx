@@ -1016,7 +1016,8 @@ export function AddPlantWorkflow({ initialPlants, defaultPlacement, refreshOnCha
                     onClick={() => {
                       const nm = parseNotes(plant.notes);
                       setEditingPlantId(plant.id);
-                      setSelectedPlant({ commonName: plant.nickname, species: plant.species, source: "search", imageUrl: providerImageUrl });
+                      const originalSource = nm.get("source") === "image" ? "image" : "search";
+                      setSelectedPlant({ commonName: plant.nickname, species: plant.species, source: originalSource, imageUrl: providerImageUrl });
                       setNickname(plant.nickname);
                       setPlacement(plant.placement);
                       setSunlight(plant.sunlight);

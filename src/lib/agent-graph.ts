@@ -10,6 +10,7 @@ import {
   type CarePlanOutput,
   type PlantCarePlan,
 } from "@/lib/care-plan-engine";
+import { logger } from "@/lib/logger";
 import {
   describeReminderMode,
   formatReminderChannelSequence,
@@ -247,27 +248,30 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
     plannerActions = result.actions;
     toolCallCount = result.toolCallCount;
     iterations = result.iterations;
-  } catch {
+  } catch (error) {
     fallbackUsed = true;
+    logger.warn("care_planner_llm_failed_using_fallback", {
+      userId: state.userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 
   // Keep the workspace actionable when the external planner fails or omits a plant.
   // These rules use the same saved context and weather evidence, not mock data.
   const fallbackActions = buildRawCareActions(context);
-  const coveredPlantIds = new Set(
-    plannerActions
-      .map((action) => action.plant_id)
-      .filter((plantId): plantId is string => Boolean(plantId)),
-  );
   const coveredActionKeys = new Set(
     plannerActions.map((action) => `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`),
   );
   const rawActions = [
     ...plannerActions,
     ...fallbackActions.filter((action) => {
+      // Only skip a fallback action when the planner already produced that exact
+      // (plant, action type, date) combination — not merely because the planner
+      // said *something* about this plant. Otherwise an unrelated planner action
+      // (e.g. watering) silently suppresses a distinct safety action the fallback
+      // would have added (e.g. frost protection) for the same plant.
       const key = `${action.plant_id ?? "garden"}|${action.type}|${action.due_date}`;
       if (coveredActionKeys.has(key)) return false;
-      if (action.plant_id !== null && coveredPlantIds.has(action.plant_id)) return false;
       coveredActionKeys.add(key);
       return true;
     }),
@@ -278,6 +282,11 @@ async function reactCarePlannerAgent(state: CareAgentStateType) {
 
   // If model never submitted, surface this as a warning trace so dashboard can show banner
   const gaveUp = rawActions.length === 0 && context.plants.length > 0;
+  if (gaveUp) {
+    logger.error("care_planner_gave_up_zero_actions", {
+      userId: state.userId, plantCount: context.plants.length, toolCallCount, iterations,
+    });
+  }
   return {
     plantPlans,
     rawActions,

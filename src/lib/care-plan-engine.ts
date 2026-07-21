@@ -1042,7 +1042,8 @@ export function buildReminderReadiness(
     .filter((action) => action.status === "approved")
     .slice(0, 24)
     .map((action) => {
-      const ready = channels.length > 0 && action.due_date.length > 0 && windowActive;
+      const confident = action.confidence >= 0.65;
+      const ready = channels.length > 0 && action.due_date.length > 0 && windowActive && confident;
       return {
         action_id: action.id,
         title: action.title,
@@ -1058,7 +1059,9 @@ export function buildReminderReadiness(
             ? "Select at least one reminder channel."
             : !windowActive
               ? "Outside the selected reminder window."
-              : "Missing notification channel or due date.",
+              : !confident
+                ? "Confidence too low for automatic delivery."
+                : "Missing notification channel or due date.",
       };
     });
 }

@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { readGardenState } from "@/lib/garden";
 import { requireApiSession } from "@/lib/api-session";
 import type { TasksResponse } from "@/lib/workspace-contracts";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const { response } = await requireApiSession();
 
   if (response) {
@@ -22,4 +23,4 @@ export async function GET(request: Request) {
     tasks,
     garden,
   } satisfies TasksResponse);
-}
+});

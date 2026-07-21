@@ -23,6 +23,8 @@ import {
   upsertWorkspaceProfile,
 } from "@/lib/workspace-store";
 import { issuePasswordResetToken, resetPassword, sendPasswordResetEmail } from "@/lib/password-reset";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { clientIpFromHeaders } from "@/lib/api-handler";
 
 function getChannels(
   formData: FormData,
@@ -85,6 +87,11 @@ function parseReminderWindow(formData: FormData, fallback = "") {
 }
 
 export async function signUpAction(formData: FormData) {
+  const ip = await clientIpFromHeaders();
+  if ((await checkRateLimit("sign_up", ip, 5, 3600)).limited) {
+    redirect("/sign-up?error=rate_limited");
+  }
+
   const firstName = formData.get("firstName")?.toString().trim() ?? "";
   const lastName = formData.get("lastName")?.toString().trim() ?? "";
   const legacyName = formData.get("name")?.toString().trim() ?? "";
@@ -122,6 +129,15 @@ export async function signInAction(formData: FormData) {
 
   if (!email || !password) {
     redirect("/sign-in?error=invalid");
+  }
+
+  const ip = await clientIpFromHeaders();
+  const [ipLimit, emailLimit] = await Promise.all([
+    checkRateLimit("sign_in_ip", ip, 20, 900),
+    checkRateLimit("sign_in_email", email.toLowerCase(), 10, 900),
+  ]);
+  if (ipLimit.limited || emailLimit.limited) {
+    redirect("/sign-in?error=rate_limited");
   }
 
   const { getDatabase } = await import("@/lib/database");
@@ -163,8 +179,15 @@ export async function signInAction(formData: FormData) {
 export async function requestPasswordResetAction(formData: FormData) {
   const email = formData.get("email")?.toString().trim().toLowerCase() ?? "";
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    const request = await issuePasswordResetToken(email);
-    if (request) await sendPasswordResetEmail({ to: request.email, name: request.name, token: request.token });
+    // Rate limit by email, not IP: keeps the response identical (still "sent=1")
+    // whether the account exists, was just reset, or doesn't exist at all, so the
+    // account-existence privacy property below isn't undermined by a distinguishable
+    // rate-limit response.
+    const limited = (await checkRateLimit("password_reset", email, 3, 3600)).limited;
+    if (!limited) {
+      const request = await issuePasswordResetToken(email);
+      if (request) await sendPasswordResetEmail({ to: request.email, name: request.name, token: request.token });
+    }
   }
 
   // Keep account existence private. The same confirmation is shown for every valid request.

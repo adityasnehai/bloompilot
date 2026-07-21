@@ -4,8 +4,9 @@ import {
   buildWorkspaceEnvelope,
   readAgentServiceStatus,
 } from "@/lib/agent-service";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { response } = await requireApiSession();
 
   if (response) {
@@ -21,4 +22,4 @@ export async function GET() {
     workspace,
     service,
   });
-}
+});

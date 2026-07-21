@@ -1,6 +1,7 @@
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { runCarePlanAgents } from "@/lib/agent-graph";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ const STEP_LABELS: Record<string, { title: string; detail: string }> = {
 
 const STEP_ORDER = ["context", "environment", "knowledge", "planner", "evidence"];
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? new Response("Unauthorized", { status: 401 });
 
@@ -81,4 +82,4 @@ export async function GET() {
       Connection: "keep-alive",
     },
   });
-}
+});

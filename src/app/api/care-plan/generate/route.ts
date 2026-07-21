@@ -8,8 +8,10 @@ import {
 } from "@/lib/context-builder";
 import { runCarePlanAgents } from "@/lib/agent-graph";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
 
-export async function POST() {
+export const POST = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
 
   if (response) {
@@ -19,6 +21,11 @@ export async function POST() {
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Each call runs a real LLM tool-calling loop (up to 10 iterations) — cap how
+  // often one account can trigger it.
+  const limit = await checkRateLimit("care_plan_generate", session.email, 6, 300);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
 
   const identity = await readWorkspaceIdentityByEmail(session.email);
   if (!identity) {
@@ -60,4 +67,4 @@ export async function POST() {
   }
 
   return NextResponse.json({ care_plan: carePlan });
-}
+});

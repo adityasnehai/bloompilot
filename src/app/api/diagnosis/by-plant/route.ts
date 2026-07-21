@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler } from "@/lib/api-handler";
 
 type DiagnosisRow = {
   id: string;
@@ -16,7 +17,7 @@ type DiagnosisRow = {
   created_at: string;
 };
 
-export async function GET(request: NextRequest) {
+export const GET = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
   }));
 
   return NextResponse.json({ diagnoses });
-}
+});
 
 function safeParseStringArray(raw: string): string[] {
   try {

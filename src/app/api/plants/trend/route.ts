@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getPlantHealthHistory } from "@/lib/plant-memory";
+import { withApiHandler } from "@/lib/api-handler";
 
 export type TrendPoint = {
   date: string;
@@ -41,7 +42,7 @@ function computeDailyScores(
   return points;
 }
 
-export async function GET(request: NextRequest) {
+export const GET = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -59,4 +60,4 @@ export async function GET(request: NextRequest) {
   const trend = computeDailyScores(events);
 
   return NextResponse.json({ trend });
-}
+});

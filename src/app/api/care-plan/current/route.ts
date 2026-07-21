@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readLatestCarePlan } from "@/lib/care-plan-engine";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
 
   if (response) {
@@ -20,4 +21,4 @@ export async function GET() {
   }
 
   return NextResponse.json({ care_plan: await readLatestCarePlan(identity.id) });
-}
+});

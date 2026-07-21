@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { readOrCreateLatestAgentRun, runAgentBrief } from "@/lib/agent-runtime";
 import { requestExternalAgentBrief } from "@/lib/agent-service";
 import { readSession } from "@/lib/session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const session = await readSession();
 
   if (!session) {
@@ -28,4 +29,4 @@ export async function GET(request: Request) {
     refresh === "1" ? await runAgentBrief("api") : await readOrCreateLatestAgentRun();
 
   return NextResponse.json({ run, source: "local" });
-}
+});

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readAgentServiceStatus } from "@/lib/agent-service";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { response } = await requireApiSession({ requireOnboarded: false });
 
   if (response) {
@@ -10,4 +11,4 @@ export async function GET() {
   }
 
   return NextResponse.json(readAgentServiceStatus());
-}
+});

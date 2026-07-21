@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { buildGardenContext } from "@/lib/context-builder";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function POST() {
+export const POST = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
 
   if (response) {
@@ -25,4 +26,4 @@ export async function POST() {
 
   const context = await buildGardenContext(identity.id);
   return NextResponse.json({ context });
-}
+});

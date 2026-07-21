@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { getDatabase } from "@/lib/database";
+import { withApiHandler } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
@@ -14,7 +15,7 @@ function csvRow(values: (string | number | null | undefined)[]) {
     .join(",");
 }
 
-export async function GET(req: NextRequest) {
+export const GET = withApiHandler(async (req: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const identity = await readWorkspaceIdentityByEmail(session.email);
@@ -79,4 +80,4 @@ export async function GET(req: NextRequest) {
       "Content-Disposition": "attachment; filename=care-plan-history.csv",
     },
   });
-}
+});

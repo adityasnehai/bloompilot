@@ -7,6 +7,7 @@ import {
 } from "@/lib/context-builder";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler } from "@/lib/api-handler";
 
 type DashboardPayload = {
   garden_summary: {
@@ -91,7 +92,7 @@ function buildDashboardPayload(context: ContextJson): DashboardPayload {
   };
 }
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
 
   if (response) {
@@ -118,4 +119,4 @@ export async function GET() {
   }
 
   return NextResponse.json(buildDashboardPayload(context));
-}
+});

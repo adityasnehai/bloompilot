@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { deactivatePushSubscription } from "@/lib/reminders";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
-type UnsubscribeBody = {
-  endpoint?: string;
-};
+const unsubscribeSchema = z.object({
+  endpoint: z.string().trim().min(1).optional(),
+});
 
-export async function POST(request: Request) {
+export const POST = withApiHandler(async (request: Request) => {
   const { session, response } = await requireApiSession();
   if (response) return response;
   if (!session) {
@@ -19,9 +21,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => null) as UnsubscribeBody | null;
-  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  const endpoint = body.endpoint?.trim();
+  const parsed = await parseJsonBody(request, unsubscribeSchema);
+  if (!parsed.ok) return parsed.response;
+  const endpoint = parsed.data.endpoint?.trim();
   if (!endpoint) {
     return NextResponse.json({ error: "endpoint is required" }, { status: 400 });
   }
@@ -31,4 +33,4 @@ export async function POST(request: Request) {
     endpoint,
   });
   return NextResponse.json({ ok });
-}
+});

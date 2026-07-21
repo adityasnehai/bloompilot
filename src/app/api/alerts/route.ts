@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
 import { runAlertObserver, readRecentAlerts } from "@/lib/alert-observer";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -14,9 +15,9 @@ export async function GET() {
 
   const alerts = await readRecentAlerts(identity.id, 30);
   return NextResponse.json({ alerts });
-}
+});
 
-export async function POST() {
+export const POST = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -31,4 +32,4 @@ export async function POST() {
   } catch {
     return NextResponse.json({ error: "Alert service unavailable" }, { status: 503 });
   }
-}
+});

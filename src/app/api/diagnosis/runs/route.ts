@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { readRecentDiagnosisRuns } from "@/lib/diagnosis";
 import { readSession } from "@/lib/session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const session = await readSession();
 
   if (!session) {
@@ -18,4 +19,4 @@ export async function GET(request: Request) {
     count: runs.length,
     runs,
   });
-}
+});

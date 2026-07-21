@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { readWeatherSnapshot } from "@/lib/weather";
 import { requireApiSession } from "@/lib/api-session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   const { session, response } = await requireApiSession({ requireOnboarded: false });
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -23,4 +24,4 @@ export async function GET(request: Request) {
       { status: 500 },
     );
   }
-}
+});

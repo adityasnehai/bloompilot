@@ -6,8 +6,9 @@ import {
   readLatestContextSnapshot,
 } from "@/lib/context-builder";
 import { readWorkspaceIdentityByEmail } from "@/lib/workspace-store";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const { session, response } = await requireApiSession();
 
   if (response) {
@@ -29,4 +30,4 @@ export async function GET() {
     ? await buildGardenContext(identity.id)
     : snapshot;
   return NextResponse.json({ context });
-}
+});

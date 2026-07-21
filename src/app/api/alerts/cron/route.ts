@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { runAlertObserver } from "@/lib/alert-observer";
 import { readAllActiveUsers } from "@/lib/workspace-store";
+import { withApiHandler } from "@/lib/api-handler";
 
 // Called by Vercel Cron (configured in vercel.json) every 4 hours.
 // Protected by CRON_SECRET so only the scheduler can trigger it.
-export async function POST(request: Request) {
+export const POST = withApiHandler(async (request: Request) => {
   const authHeader = request.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET?.trim();
 
@@ -30,4 +31,4 @@ export async function POST(request: Request) {
   }));
 
   return NextResponse.json({ ran: users.length, summary });
-}
+});

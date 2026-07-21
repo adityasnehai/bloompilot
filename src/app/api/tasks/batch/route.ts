@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import {
   getCurrentWorkspaceUserId,
@@ -7,16 +8,22 @@ import {
   toggleTaskStatus,
 } from "@/lib/garden";
 import { logHealthEvent, type HealthEventType } from "@/lib/plant-memory";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+const taskBatchSchema = z.object({
+  taskIds: z.unknown().optional(),
+  action: z.unknown().optional(),
+});
+
+export const POST = withApiHandler(async (req: NextRequest) => {
   const { response } = await requireApiSession();
   if (response) return response;
 
-  const body = await req.json().catch(() => null) as { taskIds?: unknown; action?: unknown } | null;
-  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  const { taskIds, action } = body;
+  const parsed = await parseJsonBody(req, taskBatchSchema);
+  if (!parsed.ok) return parsed.response;
+  const { taskIds, action } = parsed.data;
 
   if (!Array.isArray(taskIds) || taskIds.length === 0 || taskIds.length > 100 || taskIds.some((id) => typeof id !== "string" || !id.trim())) {
     return NextResponse.json({ error: "taskIds required" }, { status: 400 });
@@ -58,4 +65,4 @@ export async function POST(req: NextRequest) {
 
   await writeGardenState(gardenState);
   return NextResponse.json({ ok: true, processed });
-}
+});

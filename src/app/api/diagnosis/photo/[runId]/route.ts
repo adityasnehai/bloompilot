@@ -1,9 +1,10 @@
 import { readDiagnosisPhoto } from "@/lib/diagnosis";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(
+export const GET = withApiHandler(async (
   _request: Request,
   context: { params: Promise<{ runId: string }> },
-) {
+) => {
   const { runId } = await context.params;
   const asset = await readDiagnosisPhoto(runId);
 
@@ -18,4 +19,4 @@ export async function GET(
       "Cache-Control": "private, max-age=3600",
     },
   });
-}
+});

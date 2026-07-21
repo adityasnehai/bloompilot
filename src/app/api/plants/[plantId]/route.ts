@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import {
   coercePlantInput,
   removePlantMutation,
   updatePlantMutation,
 } from "@/lib/workspace-mutations";
+import { withApiHandler, parseJsonBody } from "@/lib/api-handler";
 
-export async function DELETE(
+const plantInputSchema = z.record(z.string(), z.unknown());
+
+export const DELETE = withApiHandler(async (
   _request: Request,
   context: { params: Promise<{ plantId: string }> },
-) {
+) => {
   const { response } = await requireApiSession({ requireOnboarded: false });
 
   if (response) {
@@ -32,12 +36,12 @@ export async function DELETE(
     ok: true,
     garden: result.garden,
   });
-}
+});
 
-export async function PUT(
+export const PUT = withApiHandler(async (
   request: Request,
   context: { params: Promise<{ plantId: string }> },
-) {
+) => {
   const { response } = await requireApiSession({ requireOnboarded: false });
 
   if (response) {
@@ -50,9 +54,9 @@ export async function PUT(
     return NextResponse.json({ error: "Missing plant id" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => null) as Record<string, unknown> | null;
-  if (!body) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  const input = coercePlantInput(body);
+  const parsed = await parseJsonBody(request, plantInputSchema);
+  if (!parsed.ok) return parsed.response;
+  const input = coercePlantInput(parsed.data);
 
   if (!input) {
     return NextResponse.json({ error: "Invalid plant payload" }, { status: 400 });
@@ -69,4 +73,4 @@ export async function PUT(
     garden: result.garden,
     plant: result.plant,
   });
-}
+});

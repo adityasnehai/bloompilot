@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiSession } from "@/lib/api-session";
 import { enrichSpecies, enrichSpeciesBatch } from "@/lib/plant-enrichment";
 import { getStaleKnowledgeKeys, getAllKnowledgeSpeciesKeys, getKnowledgeFromDB } from "@/lib/plant-knowledge-db";
+import { withApiHandler, parseJsonBody, clientIp, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
+
+const enrichRequestSchema = z.object({
+  species: z.string().trim().min(1).max(200),
+});
 
 // GET /api/knowledge?species=Monstera — get stored knowledge for a species
 // GET /api/knowledge?list=1 — list all known species keys
 // Public (read-only): returns cached, species-level knowledge with no user data,
 // so the public Garden Studio companion hints work without login.
-export async function GET(request: NextRequest) {
+export const GET = withApiHandler(async (request: NextRequest) => {
+  const limit = await checkRateLimit("knowledge_get", clientIp(request), 60, 60);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
+
   const { searchParams } = new URL(request.url);
 
   if (searchParams.get("list") === "1") {
@@ -28,13 +38,17 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ found: true, knowledge: stored });
-}
+});
 
 // POST /api/knowledge/enrich — { species: string } enrich a single species
 // POST /api/knowledge/refresh — refresh all stale records (up to 50)
-export async function POST(request: NextRequest) {
+export const POST = withApiHandler(async (request: NextRequest) => {
   const { session, response } = await requireApiSession();
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Each call fans out to Perenual/Trefle — real, metered external API calls.
+  const limit = await checkRateLimit("knowledge_enrich", session.email, 15, 300);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get("action") ?? "enrich";
@@ -48,11 +62,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ refreshed: stale.length, species: stale });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { species?: string };
-  const species = body.species?.trim();
-  if (!species) {
-    return NextResponse.json({ error: "species required in body" }, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, enrichRequestSchema);
+  if (!parsed.ok) return parsed.response;
+  const { species } = parsed.data;
 
   const result = await enrichSpecies(species);
   if (!result) {
@@ -60,4 +72,4 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ enriched: true, species, confidence: result.confidence, sources: result.sources });
-}
+});

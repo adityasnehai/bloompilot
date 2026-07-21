@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { reverseGeocodeLocation } from "@/lib/location";
 import { requireApiSession } from "@/lib/api-session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET(request: Request) {
+export const GET = withApiHandler(async (request: Request) => {
   // requireOnboarded:false — called during onboarding before profile is complete
   const { session, response } = await requireApiSession({ requireOnboarded: false });
   if (!session || response) return response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,4 +25,4 @@ export async function GET(request: Request) {
       { status: 500 },
     );
   }
-}
+});

@@ -90,6 +90,8 @@ export function AuthFormCard({
             <div role="alert" className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-6 text-white/85">
               {error === "exists"
                 ? "An account with this email already exists."
+                : error === "rate_limited"
+                ? "Too many attempts. Please wait a few minutes and try again."
                 : error === "password_reset_required"
                   ? (
                       <>

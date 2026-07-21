@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/api-session";
 import { toggleTaskMutation } from "@/lib/workspace-mutations";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function POST(
+export const POST = withApiHandler(async (
   _request: Request,
   context: { params: Promise<{ taskId: string }> },
-) {
+) => {
   const { response } = await requireApiSession();
 
   if (response) {
@@ -29,4 +30,4 @@ export async function POST(
     garden: result.garden,
     task: result.task,
   });
-}
+});

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { buildWorkspaceEnvelope } from "@/lib/agent-service";
 import { readSession } from "@/lib/session";
+import { withApiHandler } from "@/lib/api-handler";
 
-export async function GET() {
+export const GET = withApiHandler(async () => {
   const session = await readSession();
 
   if (!session) {
@@ -10,4 +11,4 @@ export async function GET() {
   }
 
   return NextResponse.json(await buildWorkspaceEnvelope());
-}
+});

@@ -164,6 +164,8 @@ const MAX_REMINDERS_PER_PLANT_PER_DAY = 2;
 const MAX_ESCALATIONS_PER_PLANT_PER_DAY = 1;
 const MAX_REMINDER_EVENTS_PER_USER_PER_DAY = 5;
 const MIN_MINUTES_BETWEEN_LIVE_EVENTS = 75;
+// Matches the threshold reminderAgent (agent-graph.ts) intends for delivery readiness.
+const REMINDER_MIN_CONFIDENCE = 0.65;
 
 function nowIso() {
   return new Date().toISOString();
@@ -572,11 +574,27 @@ async function runReminderSweepForProfile(
   let lastLiveEventAt = history.lastLiveEventAt;
 
   const liveActions = approved.filter((action) => !isLowPriorityDigest(action));
-  const lowPriorityActions = approved.filter(isLowPriorityDigest);
+  // Digest grouping has no suppression-tracking loop of its own (unlike liveActions
+  // below), so the confidence gate is applied here directly rather than left to leak
+  // low-confidence claims into a digest email.
+  const lowPriorityActions = approved
+    .filter(isLowPriorityDigest)
+    .filter((action) => action.confidence >= REMINDER_MIN_CONFIDENCE);
 
   for (const action of liveActions) {
     const taskId = action.id;
     const plantId = action.plant_id;
+
+    if (action.confidence < REMINDER_MIN_CONFIDENCE) {
+      suppressions.push({
+        channel: "all",
+        task_id: taskId,
+        plant_id: plantId,
+        reason: "confidence_below_delivery_threshold",
+      });
+      for (const channel of reminderChannels) channelStats[channel].suppressed += 1;
+      continue;
+    }
 
     if (!activeWindow) {
       suppressions.push({

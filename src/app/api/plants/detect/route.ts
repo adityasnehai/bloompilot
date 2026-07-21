@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { identifyPlantPhotoCandidates } from "@/lib/plantnet";
+import { withApiHandler, clientIp, rateLimitedResponse } from "@/lib/api-handler";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 // Public endpoint — only calls the external PlantNet vision API, no user data.
-// Open so the public Garden Studio photo-identify works without login.
-export async function POST(request: Request) {
+// Open so the public Garden Studio photo-identify works without login. Being
+// unauthenticated makes this the single highest bill-risk route in the app, so
+// it's rate limited by IP even though there's no account to key on.
+export const POST = withApiHandler(async (request: Request) => {
+  const limit = await checkRateLimit("plants_detect", clientIp(request), 10, 300);
+  if (limit.limited) return rateLimitedResponse(limit.retryAfterSeconds);
+
   let formData: FormData;
   try {
     formData = await request.formData();
@@ -25,4 +32,4 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Plant identification service unavailable" }, { status: 502 });
   }
-}
+});
