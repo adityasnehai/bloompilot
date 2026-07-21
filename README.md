@@ -147,18 +147,12 @@ flowchart TD
         TC -->|"yes"| DUP{"Same tool and args<br/>already called this run?"}
         DUP -->|"yes"| WARN["Log repeated-call warning<br/>tell model to use the existing result"]
         DUP -->|"no"| WHICH{"Which tool?"}
-        WHICH -->|"get_health_history"| T1["Query plant_health_events"]
-        WHICH -->|"get_plant_knowledge"| T2["Query plant_species_knowledge"]
-        WHICH -->|"get_action_feedback"| T3["Query action_feedback"]
-        WHICH -->|"propose_watering_adjustment"| T4["Clamp interval to 1-30 days"]
+        WHICH -->|"read tools"| EXEC["Execute tool<br/>get_health_history, get_plant_knowledge,<br/>get_action_feedback, or propose_watering_adjustment<br/>watering interval clamped to 1-30 days"]
         WHICH -->|"submit_care_plan"| VAL{"Valid and complete?"}
         VAL -->|"no, partial or invalid"| REVISE["Push correction message,<br/>loop back for a fixed submission"]
         VAL -->|"yes"| ACCEPT["Actions accepted"]
         WARN --> CONTINUE["Tool result appended,<br/>loop continues"]
-        T1 --> CONTINUE
-        T2 --> CONTINUE
-        T3 --> CONTINUE
-        T4 --> CONTINUE
+        EXEC --> CONTINUE
         REVISE --> CONTINUE
         CONTINUE --> LLM
     end
